@@ -461,7 +461,102 @@ function normalizeLoadedData(k,v){
   if(k === "teachers" && Array.isArray(v)) return v.map(t=>({...t, subjects:t.subjects || {}, dob:t.dob || t.dateOfBirth || "", contact:t.contact || "", appointmentDate:t.appointmentDate || "", education:t.education || "", authUserId:t.authUserId || "", authEmail:t.authEmail || ""}));
   return v;
 }
+async function invokeStudentData(body){
+  if(!supabaseClient) throw new Error("Student online data service is unavailable.");
+  const {data,error}=await supabaseClient.functions.invoke("student-data",{body});
+  if(error){
+    let detail="";
+    try{
+      const response=error?.context;
+      if(response && typeof response.clone==="function"){
+        const copy=response.clone(); const raw=await copy.text();
+        if(raw){ try{ const parsed=JSON.parse(raw); detail=parsed?.error||parsed?.message||raw; }catch(_){ detail=raw; } }
+      }
+    }catch(_){ }
+    throw new Error(detail||error?.message||"Student school data could not be loaded.");
+  }
+  if(!data?.success) throw new Error(data?.error||"Student school data could not be loaded.");
+  return data;
+}
+
+async function loadStudentDataRemote(name, cls, password){
+  const data=await invokeStudentData({action:"login",name, className:cls, password});
+  const state=data.state||{};
+  const student=state.student||null;
+  if(!student?.id) throw new Error("Student profile could not be loaded from the school database.");
+  DB.students=[student];
+  DB.attendance=normalizeLoadedData("attendance",state.attendance||{});
+  DB.reports=normalizeLoadedData("reports",state.reports||{});
+  DB.marks=normalizeLoadedData("marks",state.marks||{});
+  DB.feeStructure=normalizeLoadedData("feeStructure",state.feeStructure||{});
+  DB.feeRecords=normalizeLoadedData("feeRecords",state.feeRecords||{});
+  DB.news=normalizeLoadedData("news",state.news||[]);
+  DB.books=normalizeLoadedData("books",state.books||[]);
+  DB.onlineClasses=normalizeLoadedData("onlineClasses",state.onlineClasses||[]);
+  DB.portalSettings=normalizeLoadedData("portalSettings",state.portalSettings||{});
+  remoteReady=true;
+  return data;
+}
+
+async function saveStudentDataRemote(key,val){
+  const s=session?.student;
+  if(!s?.id) throw new Error("Student session is unavailable.");
+  const data=await invokeStudentData({action:"save",key,value:val,name:s.name,className:s.class,password:s.password||""});
+  const state=data.state||{};
+  if(state.feeRecords) DB.feeRecords=normalizeLoadedData("feeRecords",state.feeRecords);
+  return data;
+}
+
+async function loadTeacherDataRemote(){
+  if(!supabaseClient || !authSession?.access_token) throw new Error("Teacher online session is unavailable.");
+  const {data,error}=await supabaseClient.functions.invoke("teacher-data",{body:{action:"load",teacherId:session?.teacherId||undefined}});
+  if(error){
+    let detail="";
+    try{
+      const response=error?.context;
+      if(response && typeof response.clone==="function"){
+        const copy=response.clone(); const raw=await copy.text();
+        if(raw){ try{ const parsed=JSON.parse(raw); detail=parsed?.error||parsed?.message||raw; }catch(_){ detail=raw; } }
+      }
+    }catch(_){ }
+    throw new Error(detail||error?.message||"Teacher school data could not be loaded.");
+  }
+  if(!data?.success) throw new Error(data?.error||"Teacher school data could not be loaded.");
+  const state=data.state||{};
+  for(const k of ["students","teachers","attendance","reports","marks","graduatedStudents","news","books","onlineClasses","portalSettings"]){
+    if(Object.prototype.hasOwnProperty.call(state,k)) DB[k]=normalizeLoadedData(k,state[k]);
+  }
+  DB.graduatedStudents=Array.isArray(DB.graduatedStudents)?DB.graduatedStudents:[];
+  remoteReady=true;
+  return data;
+}
+
 async function loadAll(){
+  if(session?.role==="student"){
+    try{
+      await loadStudentDataRemote(session.student?.name||session.displayName||"",session.student?.class||"",session.student?.password||"");
+      const fresh=DB.students.find(x=>x.id===session.student.id);
+      if(fresh) session.student={...fresh,password:session.student.password};
+      session.photoData=session.student?.photoData||"";
+      return;
+    }catch(e){
+      console.error("Student remote data load failed",e);
+      throw e;
+    }
+  }
+  if(session?.role==="teacher" && supabaseClient && authSession){
+    try{
+      await loadTeacherDataRemote();
+      return;
+    }catch(e){
+      console.error("Teacher remote data load failed",e);
+      // Keep a local copy only as a temporary fallback; do not query the protected school_state table as a teacher.
+      for(const k of REMOTE_KEYS){
+        try{ const local=localStorage.getItem("dlbs:"+k); if(local!==null) DB[k]=normalizeLoadedData(k,JSON.parse(local)); else DB[k]=defaultValueFor(k); }catch(_){ DB[k]=defaultValueFor(k); }
+      }
+      throw e;
+    }
+  }
   const keys = REMOTE_KEYS;
   let remoteAny=false;
   if(supabaseClient){
@@ -497,6 +592,30 @@ async function loadAll(){
 async function saveKey(key,val){
   DB[key]=val;
   const payload=JSON.stringify(val);
+  if(session?.role==="student" && supabaseClient){
+    let saved=false;
+    try{ localStorage.setItem("dlbs:"+key,payload); }catch(e){}
+    remoteWriteBusy=true;
+    try{ await saveStudentDataRemote(key,val); saved=true; }
+    catch(e){ console.error("Student data save failed",e); }
+    finally{ remoteWriteBusy=false; }
+    if(!saved) showToast("Could not save to the online school database. Please try again.");
+    return saved;
+  }
+  if(session?.role==="teacher" && supabaseClient && authSession){
+    let saved=false;
+    try{ localStorage.setItem("dlbs:"+key,payload); }catch(e){}
+    remoteWriteBusy=true;
+    try{
+      const {data,error}=await supabaseClient.functions.invoke("teacher-data",{body:{action:"save",key,value:val,teacherId:session.teacherId}});
+      if(!error && data?.success) saved=true;
+      else if(error) console.error("Teacher data save failed",error);
+      else if(data?.error) console.error("Teacher data save rejected",data.error);
+    }catch(e){ console.error("Teacher data save failed",e); }
+    finally{ remoteWriteBusy=false; }
+    if(!saved) showToast("Could not save to the online school database. Your browser kept a local backup.");
+    return saved;
+  }
   let saved=false;
   // Always keep a local emergency copy, but the authoritative copy is Supabase.
   try{ localStorage.setItem("dlbs:"+key,payload); }catch(e){}
@@ -1443,14 +1562,27 @@ function attachHandlers(){
   }
 
   const slf = document.getElementById("student-login-form");
-  if(slf) slf.onsubmit=e=>{
+  if(slf) slf.onsubmit=async e=>{
     e.preventDefault();
     const name=document.getElementById("su")?.value.trim()||"", cls=document.getElementById("sc")?.value||"", pass=document.getElementById("sp")?.value||"";
     const identity=`${name}|${cls}`, lock=getLoginLock("student",identity);
     if(lock.lockedUntil>Date.now()){uiState.loginError=loginLockMessage(lock);render();return false;}
-    const stu=DB.students.find(x=>x.name.trim().toLowerCase()===name.toLowerCase()&&x.class===cls&&x.password===pass&&x.status!=="left");
-    if(stu){clearLoginFailures("student",identity);session={role:"student",displayName:stu.name,student:stu,photoData:stu.photoData||""};view="app";subview="";uiState.loginError=null;render();}
-    else{const next=recordLoginFailure("student",identity);uiState.loginError=next.lockedUntil>Date.now()?loginLockMessage(next):"We couldn't match that name, class, and password. Check the spelling and try again.";render();}
+    if(!name||!cls||!pass){uiState.loginError="Enter the student's name, class, and password.";render();return false;}
+    const submit=slf.querySelector('button[type="submit"]');
+    if(submit){submit.disabled=true;submit.textContent="Signing in...";}
+    try{
+      await loadStudentDataRemote(name,cls,pass);
+      const stu=DB.students[0];
+      if(!stu){throw new Error("Student profile could not be loaded from the school database.");}
+      clearLoginFailures("student",identity);
+      session={role:"student",displayName:stu.name,student:{...stu,password:pass},photoData:stu.photoData||""};
+      view="app";subview="";uiState.loginError=null;render();
+    }catch(err){
+      console.error("Student online login failed",err);
+      const next=recordLoginFailure("student",identity);
+      uiState.loginError=next.lockedUntil>Date.now()?loginLockMessage(next):(err?.message||"We couldn't load your student profile. Check the details and try again.");
+      render();
+    }
     return false;
   };
 
@@ -2707,13 +2839,13 @@ function reportEditorModal(){
 function adminStudentsPanel(cls,list){
   const genders={Male:list.filter(s=>(s.gender||"").toLowerCase()==="male"),Female:list.filter(s=>(s.gender||"").toLowerCase()==="female"),"Not specified":list.filter(s=>!['male','female'].includes((s.gender||"").toLowerCase()))};
   const table=(label,rows)=>`<div class="gender-group"><h4>${label} (${rows.length})</h4>${rows.length?`<table><thead><tr><th>Name</th><th>DOB</th><th>Age</th><th>Parent Contact</th><th>Password</th><th>Fee</th><th></th></tr></thead><tbody>${rows.map(s=>`<tr><td>${esc(s.name)}</td><td>${s.dateOfBirth?fmtDate(s.dateOfBirth):"—"}</td><td>${s.dateOfBirth?calculateAgeFromDob(s.dateOfBirth):esc(s.age??"—")}</td><td>${esc(s.parentContact||"—")}</td><td>${renderPasswordCell(s.password, "student-final-"+s.id)}</td><td><span class="badge ${feeStatusLabel(s.id).cls}">${feeStatusLabel(s.id).label}</span></td><td><button class="btn btn-outline btn-sm" data-edit-student="${s.id}">Edit / Save</button> <button class="btn btn-outline btn-sm" data-reset-pass="${s.id}">Reset password</button> <button class="btn btn-danger btn-sm" data-remove-student="${s.id}">Remove</button></td></tr>`).join("")}</tbody></table>`:`<div class="empty">No students in this category.</div>`}</div>`;
-  return `<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:16px;"><div class="row"><select id="admin-class-filter">${CLASSES.map(c=>`<option value="${c}" ${c===cls?"selected":""}>${esc(sessionClassLabel(c))}</option>`).join("")}</select><button class="btn btn-outline btn-sm" id="auto-gen-class-btn">Auto-generate passcodes</button><button class="btn btn-outline btn-sm" id="download-class-pdf">Download ${esc(cls)} PDF</button></div><button class="btn btn-gold btn-sm" id="add-student-btn">+ Add student</button></div>${table("Male",genders.Male)}${table("Female",genders.Female)}${table("Not specified",genders["Not specified"])}</div>`;
+  return `<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:16px;"><div class="row"><select id="admin-class-filter">${CLASSES.map(c=>`<option value="${c}" ${c===cls?"selected":""}>${esc(sessionClassLabel(c))}</option>`).join("")}</select><button class="btn btn-outline btn-sm" id="auto-gen-class-btn">Auto-generate passcodes</button><button class="btn btn-outline btn-sm" id="download-class-pdf">Download ${esc(cls)} Student List</button></div><button class="btn btn-gold btn-sm" id="add-student-btn">+ Add student</button></div>${table("Male",genders.Male)}${table("Female",genders.Female)}${table("Not specified",genders["Not specified"])}</div>`;
 }
 
 function adminTeachersPanel(){
   const groups=CLASSES.map(cls=>({cls,teachers:(DB.teachers||[]).filter(t=>(t.classes||[]).includes(cls))})).filter(g=>g.teachers.length), unassigned=(DB.teachers||[]).filter(t=>!(t.classes||[]).length);
   const table=(title,ts)=>`<div class="card" style="margin-top:14px;"><div class="row" style="justify-content:space-between"><h3>${esc(title)}</h3><span class="badge badge-pending">${ts.length}</span></div><table><thead><tr><th>Name</th><th>DOB</th><th>Age</th><th>Contact</th><th>Appointment</th><th>Education</th><th>Username</th><th>Password</th><th>Class(es)</th><th></th></tr></thead><tbody>${ts.map(t=>`<tr><td>${esc(t.name)}</td><td>${t.dateOfBirth?fmtDate(t.dateOfBirth):"—"}</td><td>${t.dateOfBirth?calculateAgeFromDob(t.dateOfBirth):esc(t.age??"—")}</td><td>${esc(t.contact||"—")}</td><td>${t.appointmentDate?fmtDate(t.appointmentDate):"—"}</td><td>${esc(t.education||"—")}</td><td class="mono">${esc(t.username)}</td><td>${renderPasswordCell(t.password, "teacher-final-"+t.id)}</td><td>${(t.classes||[]).map(c=>`<div><b>${esc(c)}</b>${(t.subjects?.[c]||[]).length?` <span class="help-note">— ${esc((t.subjects[c]||[]).join(", "))}</span>`:""}</div>`).join("")}</td><td><button class="btn btn-outline btn-sm" data-edit-teacher="${t.id}">Edit / Change passcode</button> <button class="btn btn-outline btn-sm" data-reset-teacher-pass="${t.id}">Reset passcode</button> <button class="btn btn-danger btn-sm" data-remove-teacher="${t.id}">Remove</button></td></tr>`).join("")}</tbody></table></div>`;
-  return `<div class="card"><div class="row" style="justify-content:space-between"><h3>Teachers by class</h3><button class="btn btn-gold btn-sm" id="add-teacher-btn">+ Add teacher</button></div><p class="card-sub">Basic 7–9 is managed as one teacher account with a class selected at login.</p>${groups.map(g=>table(g.cls,g.teachers)).join("")}${unassigned.length?table("Unassigned",unassigned):""}</div>`;
+  return `<div class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div><h3>Teachers by class</h3><p class="card-sub">Basic 7–9 is managed as one teacher account with a class selected at login.</p></div><div class="row"><button class="btn btn-outline btn-sm" id="download-teachers-pdf">Download Teacher List</button><button class="btn btn-gold btn-sm" id="add-teacher-btn">+ Add teacher</button></div></div>${groups.map(g=>table(g.cls,g.teachers)).join("")}${unassigned.length?table("Unassigned",unassigned):""}</div>`;
 }
 
 function teacherDetailsModal(t){
@@ -2781,6 +2913,43 @@ function bindFormMasterClassRule(){
 
 function downloadClassStudentsPdf(cls){
   const {jsPDF}=window.jspdf; if(!jsPDF){showToast("PDF library is unavailable.");return;} const doc=new jsPDF(); addSchoolLogoToPdf(doc); const list=studentsInClass(cls); doc.setFontSize(16);doc.text(SCHOOL_NAME,14,18);doc.setFontSize(12);doc.text(`${cls} Student Register — ${academicYear()}`,14,27); let y=38; doc.setFontSize(9); doc.text("Name",14,y);doc.text("Gender",75,y);doc.text("DOB",105,y);doc.text("Age",145,y);doc.text("Parent Contact",165,y);y+=6;doc.line(14,y-3,198,y-3);list.forEach(s=>{if(y>280){doc.addPage();y=20;}doc.text(String(s.name||"").slice(0,32),14,y);doc.text(genderLabel(s.gender),75,y);doc.text(s.dateOfBirth?fmtDate(s.dateOfBirth):"-",105,y);doc.text(String(s.dateOfBirth?calculateAgeFromDob(s.dateOfBirth):(s.age??"-")),145,y);doc.text(String(s.parentContact||"-").slice(0,20),165,y);y+=7;});doc.save(`${cls.replace(/\s+/g,"_")}_students_${academicYear().replace("/","-")}.pdf`);
+}
+
+function downloadTeachersPdf(){
+  const {jsPDF}=window.jspdf;
+  if(!jsPDF){showToast("PDF library is unavailable.");return;}
+  const teachers=Array.isArray(DB.teachers)?DB.teachers:[];
+  const doc=new jsPDF({orientation:"landscape"});
+  addSchoolLogoToPdf(doc);
+  doc.setFontSize(16);
+  doc.text(SCHOOL_NAME,14,18);
+  doc.setFontSize(12);
+  doc.text(`Teacher List — ${academicYear()}`,14,27);
+  doc.setFontSize(8.5);
+  const headers=["Name","Contact","DOB","Age","Appointment","Education","Class(es)"];
+  const xs=[14,55,94,119,135,170,218];
+  let y=38;
+  headers.forEach((h,i)=>doc.text(h,xs[i],y));
+  y+=6;
+  doc.line(14,y-3,282,y-3);
+  teachers.forEach(t=>{
+    if(y>190){doc.addPage();y=20;headers.forEach((h,i)=>doc.text(h,xs[i],y));y+=6;doc.line(14,y-3,282,y-3);}
+    const classes=Array.isArray(t.classes)?t.classes.join(", "):"-";
+    const row=[
+      String(t.name||"-").slice(0,30),
+      String(t.contact||"-").slice(0,24),
+      t.dateOfBirth?fmtDate(t.dateOfBirth):"-",
+      String(t.dateOfBirth?calculateAgeFromDob(t.dateOfBirth):(t.age??"-")),
+      t.appointmentDate?fmtDate(t.appointmentDate):"-",
+      String(t.education||"-").slice(0,28),
+      classes.slice(0,35)
+    ];
+    row.forEach((v,i)=>doc.text(v,xs[i],y));
+    y+=7;
+  });
+  doc.setFontSize(7.5);
+  doc.text("Security note: Username and password/passcode are intentionally excluded from this downloaded list.",14,202);
+  doc.save(`teacher_list_${academicYear().replace("/","-")}.pdf`);
 }
 function downloadReportPdfForStudent(sid,term){ const s=getStudent(sid),rep=(DB.reports[sid]||{})[term]; if(!s||!rep)return; const {jsPDF}=window.jspdf; const doc=new jsPDF(); addSchoolLogoToPdf(doc);doc.setFontSize(16);doc.text(SCHOOL_NAME,14,18);doc.setFontSize(11);doc.text(`Terminal Report — ${term}`,14,26);doc.text(`Name: ${s.name}    Class: ${s.class}`,14,34);doc.text(`Promoted To: ${rep.promotedTo||"-"}`,14,40);let y=52;doc.text("Subject",14,y);doc.text("Score",90,y);doc.text("Grade",120,y);doc.text("Remark",145,y);y+=7;(rep.subjects||[]).forEach(sub=>{if(y>270){doc.addPage();y=20;}doc.text(String(sub.name||"").slice(0,25),14,y);doc.text(String(sub.score||""),90,y);doc.text(String(sub.grade||""),120,y);doc.text(String(sub.remark||"").slice(0,25),145,y);y+=7;});y+=7;doc.text(`Conduct: ${rep.conduct||"-"}`,14,y);y+=7;doc.text(`Interest: ${rep.interest||"-"}`,14,y);y+=7;doc.text(doc.splitTextToSize(`Teacher's remark: ${rep.teacherRemark||"-"}`,180),14,y);y+=14;doc.text(doc.splitTextToSize(`Head teacher's remark: ${rep.headRemark||"-"}`,180),14,y);doc.save(`${s.name.replace(/\s+/g,"_")}_${term.replace(/\s+/g,"_")}_report.pdf`); }
 
@@ -2861,6 +3030,7 @@ attachHandlers=function(){
   const transfer=document.getElementById("teacher-transfer-btn"); if(transfer)transfer.onclick=()=>{const from=teacherActiveClass(),to=nextClassFor(from);if(to&&confirm(`Transfer all active students from ${from} to ${to}?`))transferStudentsToClass(from,to);};
   const grad=document.getElementById("teacher-graduate-btn"); if(grad)grad.onclick=graduateBasic9Students;
   const dl=document.getElementById("download-class-pdf"); if(dl)dl.onclick=()=>downloadClassStudentsPdf(uiState.adminClassFilter||CLASSES[0]);
+  const dtp=document.getElementById("download-teachers-pdf"); if(dtp)dtp.onclick=downloadTeachersPdf;
   const pastSelectAll=document.getElementById("past-select-all");
   if(pastSelectAll) pastSelectAll.onchange=()=>document.querySelectorAll(".past-student-check").forEach(cb=>cb.checked=pastSelectAll.checked);
   const pastClearSelected=document.getElementById("past-clear-selected");
@@ -2972,7 +3142,9 @@ attachHandlers= function(){
         throw new Error("This account is not configured as a DLBS teacher account.");
       }
 
-      await loadAll();
+      // Teachers cannot directly SELECT the protected school_state table. Load only the
+      // teacher-scoped data through the secure teacher-data Edge Function instead.
+      const teacherRemote=await loadTeacherDataRemote();
       const teachers=Array.isArray(DB.teachers)?DB.teachers:[];
       const normalized=username.toLowerCase();
       const teacher=teachers.find(t=>t&&String(t.username||"").trim().toLowerCase()===normalized);
