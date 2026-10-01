@@ -339,6 +339,35 @@ function addSchoolLogoToPdf(doc){
 }
 
 function teacherAuthEmail(username){ const normalized=String(username||"").trim().toLowerCase().replace(/[^a-z0-9._-]/g,"_"); return `${normalized}@teachers.dlbs.local`; }
+
+// Teacher-account calls return a readable server error even when the Edge Function
+// responds with HTTP 4xx/5xx. This makes deployment/configuration problems visible
+// to the Admin instead of showing only the generic "non-2xx" message.
+async function invokeTeacherFunction(body){
+  const {data,error}=await supabaseClient.functions.invoke("create-teacher",{body});
+  if(error){
+    let detail="";
+    try{
+      const response=error?.context;
+      if(response && typeof response.clone==="function"){
+        const copy=response.clone();
+        const raw=await copy.text();
+        if(raw){
+          try{
+            const parsed=JSON.parse(raw);
+            detail=parsed?.error||parsed?.message||raw;
+          }catch(_){ detail=raw; }
+        }
+      }
+    }catch(_){ }
+    const e=new Error(detail||error?.message||"Teacher account service failed.");
+    e.cause=error;
+    throw e;
+  }
+  if(!data) throw new Error("Teacher account service returned no response.");
+  if(data.success===false) throw new Error(data.error||"Teacher account service rejected the request.");
+  return data;
+}
 let realtimeChannel = null;
 let authSession = null;
 let remoteReady = false;
@@ -2866,8 +2895,7 @@ attachHandlers=function(){
     if(!supabaseClient || !authSession?.user){showToast("Please sign in as Admin while online to reset a teacher passcode.");return;}
     const np=genPasscode(t.name);
     try{
-      const {data:fnData,error:fnError}=await supabaseClient.functions.invoke("create-teacher",{body:{action:"update_password",auth_user_id:t.authUserId,teacher_record_id:t.id,username:t.username,password:np,phone:t.contact||"",full_name:t.name}});
-      if(fnError) throw fnError;
+      const fnData=await invokeTeacherFunction({action:"update_password",auth_user_id:t.authUserId,teacher_record_id:t.id,username:t.username,password:np,phone:t.contact||"",full_name:t.name});
       if(!fnData?.success) throw new Error(fnData?.error||"Could not reset the teacher passcode.");
       t.password="";
       t.authUserId=fnData.teacher?.authUserId||t.authUserId;
@@ -3026,8 +3054,7 @@ attachModalHandlers= function(){
         const existing=DB.teachers.find(t=>t.id===uiState.editingTeacher);
         if(!existing){throw new Error("Teacher record was not found.");}
         if(password){
-          const {data:fnData,error:fnError}=await supabaseClient.functions.invoke("create-teacher",{body:{action:"update_password",auth_user_id:existing.authUserId,teacher_record_id:existing.id,username,password,phone,full_name:data.name}});
-          if(fnError) throw fnError;
+          const fnData=await invokeTeacherFunction({action:"update_password",auth_user_id:existing.authUserId,teacher_record_id:existing.id,username,password,phone,full_name:data.name});
           if(!fnData?.success) throw new Error(fnData?.error||"The teacher passcode could not be updated.");
         }
         DB.teachers=DB.teachers.map(t=>t.id===existing.id?{...t,...data,password:password||t.password||"",authUserId:t.authUserId||"",authEmail:t.authEmail||teacherAuthEmail(username)}:t);
@@ -3036,8 +3063,7 @@ attachModalHandlers= function(){
       }else{
         if(!password){showToast("Enter the teacher passcode.");return;}
         const teacherRecordId=uid("tch");
-        const {data:fnData,error:fnError}=await supabaseClient.functions.invoke("create-teacher",{body:{username,phone,password,full_name:data.name,teacher_record_id:teacherRecordId}});
-        if(fnError) throw fnError;
+        const fnData=await invokeTeacherFunction({username,phone,password,full_name:data.name,teacher_record_id:teacherRecordId});
         if(!fnData?.success || !fnData?.teacher?.authUserId) throw new Error(fnData?.error||"The teacher account could not be created.");
         DB.teachers.push({...data,id:teacherRecordId,password:password,authUserId:fnData.teacher.authUserId,authEmail:fnData.teacher.authEmail||teacherAuthEmail(username)});
         await saveKey("teachers",DB.teachers);
