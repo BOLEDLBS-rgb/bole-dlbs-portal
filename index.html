@@ -2647,7 +2647,7 @@ function populateEditTeacherSubjects(){
   if(!sel||!wrap) return;
   const t=uiState.editingTeacher ? DB.teachers.find(x=>x.id===uiState.editingTeacher) : null;
   const selected=Array.from(sel.selectedOptions).map(o=>o.value).filter(c=>["Basic 7","Basic 8","Basic 9"].includes(c));
-  wrap.innerHTML=selected.length ? selected.map(cls=>`<div style="border:1px solid var(--line);padding:10px;border-radius:4px;margin-bottom:8px;background:var(--paper);"><b style="display:block;margin-bottom:7px;color:var(--ink);">${cls}</b><div class="pill-input">${BASIC_7_9_SUBJECTS.map(subject=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:5px;margin-right:8px;margin-bottom:5px;"><input type="checkbox" data-edit-basic-subject="${cls}" value="${esc(subject)}" ${((t?.subjects?.[cls]||[]).includes(subject))?"checked":""}> ${esc(subject)}</label>`).join("")}</div></div>`).join("") : `<p class="help-note">Select Basic 7, Basic 8 or Basic 9 to assign subjects.</p>`;
+  wrap.innerHTML=selected.length ? selected.map(cls=>`<div style="border:1px solid var(--line);padding:10px;border-radius:4px;margin-bottom:8px;background:var(--paper);"><b style="display:block;margin-bottom:7px;color:var(--ink);">${cls}</b><div class="pill-input">${BASIC_7_9_SUBJECTS.filter(subject=>subject!=="FORM MASTER").map(subject=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:5px;margin-right:8px;margin-bottom:5px;"><input type="checkbox" data-edit-basic-subject="${cls}" value="${esc(subject)}" ${((t?.subjects?.[cls]||[]).includes(subject))?"checked":""}> ${esc(subject)}</label>`).join("")}</div><p class="help-note" style="margin-top:6px;">To assign FORM MASTER, select <b>FORM MASTER (Basic 7 / 8 / 9)</b> in the class / role selector above.</p></div>`).join("") : `<p class="help-note">Select Basic 7, Basic 8 or Basic 9 to assign subjects.</p>`;
 }
 const _baseAttachModalHandlers=attachModalHandlers;
 attachModalHandlers=function(){
@@ -2927,7 +2927,7 @@ function teacherDetailsModal(t){
     </div>
     <div class="field"><label>Date of Appointment</label><input type="date" id="detail-t-appointment" value="${esc(x.appointmentDate||"")}"></div>
     <div class="field"><label>Level of Education</label><input type="text" id="detail-t-education" value="${esc(x.education||"")}" placeholder="e.g. Diploma, Degree, Master's"></div>
-    <div class="field"><label>Class / class group</label><select id="detail-t-classes" multiple size="8">${TEACHER_CLASS_GROUPS.map(c=>{const ex=expandTeacherClassGroup(c);const selected=ex.every(v=>(x.classes||[]).includes(v));return `<option value="${c}" ${selected?"selected":""}>${c}</option>`}).join("")}<option value="__FORM_MASTER__">FORM MASTER</option></select><div id="form-master-picker" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.025);"><b>Select Form Master class</b><div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;"><label><input type="radio" name="form-master-class" value="Basic 7"> Basic 7</label><label><input type="radio" name="form-master-class" value="Basic 8"> Basic 8</label><label><input type="radio" name="form-master-class" value="Basic 9"> Basic 9</label></div><p class="help-note" style="margin-top:8px;">A Form Master can control one class only.</p></div><p class="help-note">Subject teachers may be assigned to multiple classes. Select <b>FORM MASTER</b> above to open the Form Master class selector.</p><p id="form-master-class-warning" class="help-note" style="display:none;color:var(--rust);font-weight:600;"></p></div>
+    <div class="field"><label>Class / class group / role</label><select id="detail-t-classes" multiple size="8">${TEACHER_CLASS_GROUPS.map(c=>{const ex=expandTeacherClassGroup(c);const selected=ex.every(v=>(x.classes||[]).includes(v));return `<option value="${c}" ${selected?"selected":""}>${c}</option>`}).join("")}<option value="__FORM_MASTER__">FORM MASTER (Basic 7 / 8 / 9)</option></select><div id="form-master-picker" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.025);"><b>Select Form Master class</b><div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;"><label><input type="radio" name="form-master-class" value="Basic 7"> Basic 7</label><label><input type="radio" name="form-master-class" value="Basic 8"> Basic 8</label><label><input type="radio" name="form-master-class" value="Basic 9"> Basic 9</label></div><p class="help-note" style="margin-top:8px;">A Form Master can control one class only.</p></div><p class="help-note">Subject teachers may be assigned to multiple classes. Select <b>FORM MASTER</b> above to open the Form Master class selector.</p><p id="form-master-class-warning" class="help-note" style="display:none;color:var(--rust);font-weight:600;"></p></div>
     <div class="field"><label>Basic 7–9 subject(s)</label><div id="edit-basic-subjects-list"></div></div>
     <div class="row" style="justify-content:flex-end"><button type="button" class="btn btn-outline" id="cancel-teacher-details">Cancel</button><button class="btn btn-primary" type="submit">${editing?"Save changes":"Create account"}</button></div>
   </form></div></div>`;
@@ -2944,71 +2944,103 @@ function populateEditTeacherSubjects(){
   wrap.innerHTML=basic.length?`<div class="help-note">Select the subject(s) or choose <b>FORM MASTER</b>. A Form Master must have exactly one Basic class.</div><div class="pill-input">${BASIC_7_9_SUBJECTS.map(sub=>`<label style="display:inline-flex;gap:5px;margin-right:8px;margin-bottom:5px;"><input type="checkbox" data-edit-basic-subject="all" value="${esc(sub)}" ${checkedSubjects.includes(sub)?"checked":""}> ${esc(sub)}</label>`).join("")}</div>`:`<p class="help-note">Select Basic 7, Basic 8 or Basic 9 to assign subjects or a Form Master role.</p>`;
 }
 
-function addTeacherClassesFromForm(){ const sel=document.getElementById("detail-t-classes"); const selected=Array.from(sel?.selectedOptions||[]).map(o=>o.value); if(selected.includes("__FORM_MASTER__")){ const picked=document.querySelector('input[name="form-master-class"]:checked')?.value; return picked?[picked]:[]; } return [...new Set(selected.flatMap(expandTeacherClassGroup))]; }
+function addTeacherClassesFromForm(){
+  const sel=document.getElementById("detail-t-classes");
+  const selected=Array.from(sel?.selectedOptions||[]).map(o=>o.value);
+  if(selected.includes("__FORM_MASTER__")){
+    const picked=document.querySelector('input[name="form-master-class"]:checked')?.value||"";
+    return picked?[picked]:[];
+  }
+  return [...new Set(selected.filter(v=>v!=="__FORM_MASTER__").flatMap(expandTeacherClassGroup))];
+}
 function selectedBasicTeacherClassesFromForm(){
   return addTeacherClassesFromForm().filter(c=>["Basic 7","Basic 8","Basic 9"].includes(c));
 }
 function formMasterCheckedForForm(){
-  return Array.from(document.querySelectorAll('[data-edit-basic-subject]:checked')).some(el=>String(el.value).trim().toUpperCase()==='FORM MASTER');
+  const sel=document.getElementById("detail-t-classes");
+  return Array.from(sel?.selectedOptions||[]).some(o=>o.value==="__FORM_MASTER__");
 }
 function enforceFormMasterClassRule(showMessage=true){
   const classes=addTeacherClassesFromForm();
   const isFM=formMasterCheckedForForm();
   if(!isFM) return true;
   if(classes.length!==1 || !["Basic 7","Basic 8","Basic 9"].includes(classes[0])){
-    if(showMessage) showToast("A Form Master can be assigned to ONE class only: Basic 7, Basic 8, or Basic 9. They cannot control Basic 7, 8 and 9 together.");
+    if(showMessage) showToast("Choose exactly one Form Master class: Basic 7, Basic 8, or Basic 9.");
     return false;
   }
   return true;
 }
 function bindFormMasterClassRule(){
-  const sel=document.getElementById('detail-t-classes');
+  const sel=document.getElementById("detail-t-classes");
   if(!sel) return;
-  const picker=document.getElementById('form-master-picker');
+  const picker=document.getElementById("form-master-picker");
   const BASIC_CLASSES=["Basic 7","Basic 8","Basic 9"];
-  const fmOption=()=>Array.from(sel.options).find(o=>o.value==='__FORM_MASTER__');
+  const fmOption=()=>Array.from(sel.options).find(o=>o.value==="__FORM_MASTER__");
   const isFMSelected=()=>!!fmOption()?.selected;
-  const setRoleCheckbox=()=>{
-    const cb=Array.from(document.querySelectorAll('[data-edit-basic-subject]')).find(el=>String(el.value).trim().toUpperCase()==='FORM MASTER');
-    if(cb && !cb.checked) cb.checked=true;
-  };
+
+  const existingTeacher=uiState.editingTeacher
+    ? (DB.teachers||[]).find(t=>t.id===uiState.editingTeacher)
+    : null;
+  const draftSubjects=uiState.teacherDraft?.subjects||{};
+  const existingFMClass=BASIC_CLASSES.find(cls =>
+    Array.isArray(existingTeacher?.subjects?.[cls]) &&
+    existingTeacher.subjects[cls].some(v=>String(v).trim().toUpperCase()==="FORM MASTER")
+  );
+  const draftFMClass=BASIC_CLASSES.find(cls =>
+    Array.isArray(draftSubjects?.[cls]) &&
+    draftSubjects[cls].some(v=>String(v).trim().toUpperCase()==="FORM MASTER")
+  );
+
+  // Existing Form Master accounts open directly in Form Master mode and keep
+  // their previously assigned Basic class.
+  if((existingFMClass||draftFMClass) && fmOption()){
+    Array.from(sel.options).forEach(o=>o.selected=(o.value==="__FORM_MASTER__"));
+  }
+
   const refresh=()=>{
     const hasFM=isFMSelected();
     if(hasFM){
-      Array.from(sel.options).forEach(o=>{ if(o.value!=='__FORM_MASTER__') o.selected=false; });
-      if(picker) picker.style.display='block';
-      setRoleCheckbox();
-      const current=Array.from(sel.options).find(o=>o.value==='Basic 7' && o.selected);
-      const existingClass=uiState.teacherDraft?.classes?.find(c=>BASIC_CLASSES.includes(c));
-      const radio=document.querySelector('input[name="form-master-class"]:checked');
-      if(!radio){
-        const wanted=existingClass||'';
-        const target=document.querySelector(`input[name="form-master-class"][value="${wanted}"]`)||document.querySelector('input[name="form-master-class"]');
-        if(target) target.checked=!!wanted;
+      // FORM MASTER is a role, not a real class. The actual stored class
+      // comes only from the Basic 7/8/9 picker below.
+      Array.from(sel.options).forEach(o=>{ if(o.value!=="__FORM_MASTER__") o.selected=false; });
+      if(picker) picker.style.display="block";
+
+      const wanted=existingFMClass||draftFMClass||"";
+      let radio=document.querySelector('input[name="form-master-class"]:checked');
+      if(!radio && wanted){
+        radio=document.querySelector(`input[name="form-master-class"][value="${wanted}"]`);
+        if(radio) radio.checked=true;
       }
-      Array.from(sel.options).forEach(o=>{o.disabled=o.value!=='__FORM_MASTER__';});
+
+      // Keep the role visible and guaranteed to be stored for the chosen class.
+      const roleBox=document.getElementById("edit-basic-subjects-list");
+      if(roleBox){
+        const chosen=radio?.value||"";
+        roleBox.innerHTML=chosen
+          ? `<div class="help-note">FORM MASTER mode is active for <b>${esc(chosen)}</b>. No subject is required for this account.</div><label style="display:inline-flex;align-items:center;gap:7px;margin-top:8px;font-weight:600;color:var(--ink);"><input type="checkbox" data-edit-basic-subject="form-master-role" value="FORM MASTER" checked> FORM MASTER</label>`
+          : `<div class="help-note" style="color:var(--rust);font-weight:600;">Choose Basic 7, Basic 8, or Basic 9 above to complete the Form Master assignment.</div>`;
+      }
+      Array.from(sel.options).forEach(o=>{o.disabled=o.value!=="__FORM_MASTER__";});
     }else{
-      if(picker) picker.style.display='none';
+      if(picker) picker.style.display="none";
       Array.from(sel.options).forEach(o=>o.disabled=false);
+      populateEditTeacherSubjects();
     }
-    populateEditTeacherSubjects();
   };
-  sel.addEventListener('change',()=>{
-    if(isFMSelected()){
-      Array.from(sel.options).forEach(o=>{if(o.value!=='__FORM_MASTER__')o.selected=false;});
-      refresh();
-    }else refresh();
+
+  sel.addEventListener("change",()=>{
+    if(isFMSelected()) Array.from(sel.options).forEach(o=>{if(o.value!=="__FORM_MASTER__")o.selected=false;});
+    refresh();
   });
-  document.querySelectorAll('input[name="form-master-class"]').forEach(r=>r.addEventListener('change',()=>{
-    const value=r.value;
-    Array.from(sel.options).forEach(o=>{if(BASIC_CLASSES.includes(o.value))o.selected=false;});
-    const target=Array.from(sel.options).find(o=>o.value==='__FORM_MASTER__');
-    if(target)target.selected=true;
+
+  document.querySelectorAll('input[name="form-master-class"]').forEach(r=>r.addEventListener("change",()=>{
+    Array.from(sel.options).forEach(o=>{o.selected=(o.value==="__FORM_MASTER__");});
     refresh();
   }));
-  document.querySelectorAll('[data-edit-basic-subject]').forEach(el=>el.addEventListener('change',refresh));
+
   refresh();
 }
+
 function downloadClassStudentsPdf(cls){
   const {jsPDF}=window.jspdf; if(!jsPDF){showToast("PDF library is unavailable.");return;} const doc=new jsPDF(); addSchoolLogoToPdf(doc); const list=studentsInClass(cls); doc.setFontSize(16);doc.text(SCHOOL_NAME,14,18);doc.setFontSize(12);doc.text(`${cls} Student Register — ${academicYear()}`,14,27); let y=38; doc.setFontSize(9); doc.text("Name",14,y);doc.text("Gender",75,y);doc.text("DOB",105,y);doc.text("Age",145,y);doc.text("Parent Contact",165,y);y+=6;doc.line(14,y-3,198,y-3);list.forEach(s=>{if(y>280){doc.addPage();y=20;}doc.text(String(s.name||"").slice(0,32),14,y);doc.text(genderLabel(s.gender),75,y);doc.text(s.dateOfBirth?fmtDate(s.dateOfBirth):"-",105,y);doc.text(String(s.dateOfBirth?calculateAgeFromDob(s.dateOfBirth):(s.age??"-")),145,y);doc.text(String(s.parentContact||"-").slice(0,20),165,y);y+=7;});doc.save(`${cls.replace(/\s+/g,"_")}_students_${academicYear().replace("/","-")}.pdf`);
 }
@@ -3310,8 +3342,20 @@ attachModalHandlers= function(){
     const username=(d.username||"").trim();
     const password=(d.password||"").trim();
     if(!username){showToast("Enter the teacher username.");return;}
-    const subjects={};
-    ["Basic 7","Basic 8","Basic 9"].forEach(c=>subjects[c]=Array.from(document.querySelectorAll(`[data-edit-basic-subject="all"]:checked`)).map(x=>x.value));
+    const subjects={"Basic 7":[],"Basic 8":[],"Basic 9":[]};
+    const fmSelected=Array.from(document.getElementById("detail-t-classes")?.selectedOptions||[]).some(o=>o.value==="__FORM_MASTER__");
+    if(fmSelected){
+      const fmClass=document.querySelector('input[name="form-master-class"]:checked')?.value||"";
+      if(!["Basic 7","Basic 8","Basic 9"].includes(fmClass)){
+        showToast("Choose the Form Master class: Basic 7, Basic 8, or Basic 9.");
+        return;
+      }
+      subjects[fmClass]=["FORM MASTER"];
+    }else{
+      ["Basic 7","Basic 8","Basic 9"].forEach(c=>{
+        subjects[c]=Array.from(document.querySelectorAll(`[data-edit-basic-subject="${c}"]:checked`)).map(x=>x.value);
+      });
+    }
     const dob=d.dob||"";
     const photoFile=document.getElementById("detail-t-photo")?.files?.[0];
     if(photoFile){try{d.photoData=await fileToResizedDataUrl(photoFile,700,0.76);}catch(err){showToast("The teacher picture could not be prepared.");return;}}
