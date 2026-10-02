@@ -435,6 +435,7 @@ const SCHOOL_YOUTUBE = "https://youtube.com/@deeperlifebasicschool?si=Y4p31ESlHb
 const SCHOOL_TIKTOK = "https://www.tiktok.com/@boledlbs?is_from_webapp=1&sender_device=pc";
 const TERMS = ["Term 1","Term 2","Term 3"];
 const BASIC_7_9_SUBJECTS = ["FORM MASTER","COMPUTING","ENGLISH LANGUAGE","SOCIAL STUDIES","R.M.E","INTERGRATED SCIENCE","MATHEMATICS","GONJA","CREATIVE ARTS","CARIER TECHNOLOGY"];
+const FORM_MASTER_ROLE = "FORM MASTER";
 function teacherSubjectMap(teacher){
   const subjects = teacher && teacher.subjects && typeof teacher.subjects === "object" ? teacher.subjects : {};
   return {"Basic 7":Array.isArray(subjects["Basic 7"])?subjects["Basic 7"]:[],"Basic 8":Array.isArray(subjects["Basic 8"])?subjects["Basic 8"]:[],"Basic 9":Array.isArray(subjects["Basic 9"])?subjects["Basic 9"]:[]};
@@ -503,7 +504,18 @@ const OBJECT_KEYS = new Set(["feeStructure","attendance","feeRecords","reports",
 function defaultValueFor(k){ return OBJECT_KEYS.has(k) ? {} : []; }
 function normalizeLoadedData(k,v){
   if(v===null || v===undefined) return defaultValueFor(k);
-  if(k === "teachers" && Array.isArray(v)) return v.map(t=>({...t, subjects:t.subjects || {}, dob:t.dob || t.dateOfBirth || "", contact:t.contact || "", appointmentDate:t.appointmentDate || "", education:t.education || "", authUserId:t.authUserId || "", authEmail:t.authEmail || ""}));
+  if(k === "teachers" && Array.isArray(v)) return v.map(t=>({...t,
+  subjects:t.subjects || {},
+  dob:t.dob || t.dateOfBirth || "",
+  contact:t.contact || "",
+  appointmentDate:t.appointmentDate || "",
+  education:t.education || "",
+  role:t.role || t.teacherRole || "",
+  teacherRole:t.teacherRole || t.role || "",
+  formMasterClass:t.formMasterClass || t.form_master_class || "",
+  authUserId:t.authUserId || "",
+  authEmail:t.authEmail || ""
+}));
   return v;
 }
 async function invokeStudentData(body){
@@ -1596,12 +1608,24 @@ function attachHandlers(){
       uiState.loginError=next.lockedUntil>Date.now()?loginLockMessage(next):"Incorrect username or password. Check the details entered by the admin.";
       render();return false;
     }
-    const assignedClasses=Array.isArray(t.classes)?t.classes:[];
+    const assignedClasses=Array.isArray(t.classes)?t.classes.flatMap(expandTeacherClassGroup):[];
     if(!assignedClasses.includes(selectedClass)){uiState.loginError=`You are not assigned to ${selectedClass}. Ask the admin to assign that class to your account.`;render();return false;}
     if(["Basic 7","Basic 8","Basic 9"].includes(selectedClass)){
       const assignedSubjects=(t.subjects&&Array.isArray(t.subjects[selectedClass]))?t.subjects[selectedClass]:[];
       if(!selectedSubject){uiState.loginError=`Select your assigned subject or role for ${selectedClass}.`;render();return false;}
-      if(!assignedSubjects.includes(selectedSubject)){uiState.loginError=`Access denied: ${selectedSubject} is not assigned to you for ${selectedClass}. Ask the admin to check your teacher assignment.`;render();return false;}
+      const legacyFormMaster =
+        String(selectedSubject).trim().toUpperCase()===FORM_MASTER_ROLE &&
+        (
+          String(t.formMasterClass||t.form_master_class||"").trim()===selectedClass ||
+          String(t.role||t.teacherRole||"").trim().toUpperCase()===FORM_MASTER_ROLE ||
+          (assignedClasses.length===1 && assignedClasses[0]===selectedClass &&
+           ["Basic 7","Basic 8","Basic 9"].every(c=>{
+             const list=t.subjects&&Array.isArray(t.subjects[c])?t.subjects[c]:[];
+             return list.length===0 || list.every(v=>String(v).trim().toUpperCase()===FORM_MASTER_ROLE);
+           }))
+        );
+      if(!assignedSubjects.includes(selectedSubject) && !legacyFormMaster){uiState.loginError=`Access denied: ${selectedSubject} is not assigned to you for ${selectedClass}. Ask the admin to check your teacher assignment.`;render();return false;}
+      if(legacyFormMaster){ t.subjects=t.subjects||{}; t.subjects[selectedClass]=[FORM_MASTER_ROLE]; }
     }
     clearLoginFailures("teacher",u);
     DB.teachers=teachers.map(x=>({...x,subjects:x.subjects||{}}));
@@ -3284,7 +3308,39 @@ attachHandlers= function(){
       if(!assignedClasses.includes(selectedClass)) throw new Error(`You are not assigned to ${selectedClass}. Ask the admin to assign that class to your account.`);
       if(["Basic 7","Basic 8","Basic 9"].includes(selectedClass)){
         const assignedSubjects=teacher.subjects&&Array.isArray(teacher.subjects[selectedClass])?teacher.subjects[selectedClass]:[];
-        if(!assignedSubjects.includes(selectedSubject)) throw new Error(`You are not assigned to ${selectedSubject} for ${selectedClass}. Ask the admin to update your teacher account.`);
+        const normalizedSelectedSubject=String(selectedSubject||"").trim().toUpperCase();
+        const explicitFormMasterClass=String(teacher.formMasterClass||teacher.form_master_class||"").trim();
+        const explicitRole=String(teacher.role||teacher.teacherRole||"").trim().toUpperCase();
+
+        // Current records store FORM MASTER inside subjects[class]. Legacy records may
+        // have the correct class assignment but be missing that subject entry. Treat a
+        // single-class account with an explicit Form Master marker as the same role.
+        const legacyFormMaster =
+          normalizedSelectedSubject===FORM_MASTER_ROLE &&
+          (explicitFormMasterClass===selectedClass ||
+           explicitRole===FORM_MASTER_ROLE ||
+           (
+             assignedClasses.length===1 &&
+             assignedClasses[0]===selectedClass &&
+             ["Basic 7","Basic 8","Basic 9"].every(c=>{
+               const list=teacher.subjects&&Array.isArray(teacher.subjects[c])?teacher.subjects[c]:[];
+               return list.length===0 || list.every(v=>String(v).trim().toUpperCase()===FORM_MASTER_ROLE);
+             })
+           ));
+
+        if(!assignedSubjects.includes(selectedSubject) && !legacyFormMaster){
+          throw new Error(`You are not assigned to ${selectedSubject} for ${selectedClass}. Ask the admin to update your teacher account.`);
+        }
+
+        // Repair the assignment in the in-memory record so the session and future
+        // saves consistently recognize the Form Master role for this class.
+        if(legacyFormMaster){
+          teacher.subjects=teacher.subjects&&typeof teacher.subjects==="object"?teacher.subjects:{};
+          teacher.subjects[selectedClass]=[FORM_MASTER_ROLE];
+          teacher.role=FORM_MASTER_ROLE;
+          teacher.teacherRole=FORM_MASTER_ROLE;
+          teacher.formMasterClass=selectedClass;
+        }
       }
 
       session={
@@ -3359,7 +3415,15 @@ attachModalHandlers= function(){
     const dob=d.dob||"";
     const photoFile=document.getElementById("detail-t-photo")?.files?.[0];
     if(photoFile){try{d.photoData=await fileToResizedDataUrl(photoFile,700,0.76);}catch(err){showToast("The teacher picture could not be prepared.");return;}}
-    const data={name:d.name.trim(),username,password,contact:phone,dateOfBirth:dob,dob,age:dob?calculateAgeFromDob(dob):"",appointmentDate:d.appointmentDate,education:d.education.trim(),classes,subjects,photoData:d.photoData||""};
+    const fmClass=fmSelected ? (document.querySelector('input[name="form-master-class"]:checked')?.value||"") : "";
+    const data={
+      name:d.name.trim(),username,password,contact:phone,dateOfBirth:dob,dob,
+      age:dob?calculateAgeFromDob(dob):"",appointmentDate:d.appointmentDate,
+      education:d.education.trim(),classes,subjects,photoData:d.photoData||"",
+      role:fmSelected?FORM_MASTER_ROLE:"",
+      teacherRole:fmSelected?FORM_MASTER_ROLE:"",
+      formMasterClass:fmClass
+    };
     if(!supabaseClient || !authSession?.user){showToast("Please sign in as Admin while online to manage teacher accounts.");return;}
     const submitBtn=tf.querySelector('button[type="submit"]');
     if(submitBtn){submitBtn.disabled=true;submitBtn.textContent=uiState.editingTeacher?"Saving...":"Creating account...";}
