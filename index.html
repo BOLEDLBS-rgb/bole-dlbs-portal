@@ -361,6 +361,18 @@ textarea{width:100%;resize:vertical;font-family:'Inter',sans-serif;}
   .card{padding:18px;}
 }
 </style>
+
+<style>
+.assignment-class{padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin:4px 0;background:var(--paper)}
+.assignment-class-title{font-weight:800;margin-bottom:5px}
+.assignment-teacher-line{font-size:12px;font-weight:700;margin-bottom:6px}
+.assignment-teacher-contact{font-weight:500;opacity:.82;margin-left:5px}
+.assignment-items{line-height:1.8}
+.assignment-chip{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-size:11px;margin:2px 3px 2px 0;background:var(--paper)}
+.role-chip{font-weight:800;border-color:var(--gold,#c89b3c)}
+.assignment-label{font-weight:700;margin-right:5px}
+.assignment-unassigned{padding:8px;border:1px dashed var(--line);border-radius:8px}
+</style>
 </head>
 <body>
 <div id="app"></div>
@@ -420,7 +432,7 @@ let remoteWriteBusy = false;
 
 /* ============================= CONSTANTS ============================= */
 const CLASSES = ["Nursery","KG 1","KG 2","Basic 1","Basic 2","Basic 3","Basic 4","Basic 5","Basic 6","Basic 7","Basic 8","Basic 9"];
-const TEACHER_CLASS_GROUPS = ["Nursery","KG 1","KG 2","Basic 1","Basic 2","Basic 3","Basic 4","Basic 5","Basic 6","Basic 7","Basic 8","Basic 9","Basic 7–9"];
+const TEACHER_CLASS_GROUPS = ["Nursery","KG 1","KG 2","Basic 1","Basic 2","Basic 3","Basic 4","Basic 5","Basic 6","Basic 7–9"];
 function expandTeacherClassGroup(v){ return v==="Basic 7–9" ? ["Basic 7","Basic 8","Basic 9"] : [v]; }
 function teacherDisplayClasses(t){ return Array.isArray(t?.classes) ? t.classes : []; }
 function academicYear(d=new Date()){ const y=d.getFullYear(), m=d.getMonth()+1; return m>=8 ? `${y}/${y+1}` : `${y-1}/${y}`; }
@@ -435,7 +447,6 @@ const SCHOOL_YOUTUBE = "https://youtube.com/@deeperlifebasicschool?si=Y4p31ESlHb
 const SCHOOL_TIKTOK = "https://www.tiktok.com/@boledlbs?is_from_webapp=1&sender_device=pc";
 const TERMS = ["Term 1","Term 2","Term 3"];
 const BASIC_7_9_SUBJECTS = ["FORM MASTER","COMPUTING","ENGLISH LANGUAGE","SOCIAL STUDIES","R.M.E","INTERGRATED SCIENCE","MATHEMATICS","GONJA","CREATIVE ARTS","CARIER TECHNOLOGY"];
-const FORM_MASTER_ROLE = "FORM MASTER";
 function teacherSubjectMap(teacher){
   const subjects = teacher && teacher.subjects && typeof teacher.subjects === "object" ? teacher.subjects : {};
   return {"Basic 7":Array.isArray(subjects["Basic 7"])?subjects["Basic 7"]:[],"Basic 8":Array.isArray(subjects["Basic 8"])?subjects["Basic 8"]:[],"Basic 9":Array.isArray(subjects["Basic 9"])?subjects["Basic 9"]:[]};
@@ -502,20 +513,182 @@ function uid(prefix){ return prefix + "_" + Math.random().toString(36).slice(2,9
 const REMOTE_KEYS = ["students","teachers","attendance","feeStructure","feeRecords","reports","news","examApprovals","books","onlineClasses","graduatedStudents","marks","portalSettings","adminActivityLog"];
 const OBJECT_KEYS = new Set(["feeStructure","attendance","feeRecords","reports","examApprovals","marks","portalSettings"]);
 function defaultValueFor(k){ return OBJECT_KEYS.has(k) ? {} : []; }
+function canonicalizeTeacherRecord(t){
+  const x={...(t||{})};
+  const normalizeText=v=>String(v??"").trim();
+  const classValues=[x.classes,x.class,x.assignedClass,x.assignedClasses,x.form,x.formMasterClass,x.form_master_class];
+  const classList=[];
+  for(const value of classValues){
+    const arr=Array.isArray(value)?value:[value];
+    for(const item of arr){
+      if(item==null||!normalizeText(item)) continue;
+      const v=normalizeText(item);
+      if(/^Basic\s*7\s*[–-]\s*9$/i.test(v)) classList.push("Basic 7","Basic 8","Basic 9");
+      else if(/^7$/i.test(v)) classList.push("Basic 7");
+      else if(/^8$/i.test(v)) classList.push("Basic 8");
+      else if(/^9$/i.test(v)) classList.push("Basic 9");
+      else classList.push(v);
+    }
+  }
+  const classes=[...new Set(classList)];
+  const subjectClasses=["Basic 7","Basic 8","Basic 9"];
+  const subjects={"Basic 7":[],"Basic 8":[],"Basic 9":[]};
+  const addSubject=(cls,value)=>{
+    if(!subjectClasses.includes(cls)||value==null) return;
+    const values=Array.isArray(value)?value:[value];
+    for(const item of values){
+      if(item && typeof item==='object'){
+        const sub=item.subject??item.name??item.value??item.assignedSubject;
+        if(sub!=null) addSubject(cls,sub);
+        continue;
+      }
+      const v=normalizeText(item);
+      if(v) subjects[cls].push(v);
+    }
+  };
+  // Read the current per-class subject map first.
+  for(const sourceName of ["subjects","subjectAssignments","assignedSubjects","teacherSubjects","subjectsByClass"]){
+    const source=x[sourceName];
+    if(source && typeof source==="object" && !Array.isArray(source)){
+      for(const cls of subjectClasses){
+        if(Object.prototype.hasOwnProperty.call(source,cls)) addSubject(cls,source[cls]);
+      }
+    }
+  }
+  // Legacy array/string subject formats: apply to every explicitly assigned Basic class.
+  for(const sourceName of ["subjects","assignedSubjects","teacherSubjects","subject","assignedSubject","teacherSubject"]){
+    const source=x[sourceName];
+    if(source==null) continue;
+    if(Array.isArray(source)){
+      for(const item of source){
+        if(item && typeof item==='object'){
+          const cls=normalizeText(item.class??item.className??item.assignedClass);
+          const sub=item.subject??item.name??item.value;
+          if(subjectClasses.includes(cls)) addSubject(cls,sub);
+          else for(const c of classes.filter(c=>subjectClasses.includes(c))) addSubject(c,sub);
+        }else{
+          for(const c of classes.filter(c=>subjectClasses.includes(c))) addSubject(c,item);
+        }
+      }
+    }else if(typeof source==='string'){
+      for(const c of classes.filter(c=>subjectClasses.includes(c))) addSubject(c,source);
+    }
+  }
+  for(const cls of subjectClasses) subjects[cls]=[...new Set(subjects[cls])];
+
+  const role=normalizeText(x.role||x.teacherRole||x.staffRole||"");
+  let fm=normalizeText(x.formMasterClass||x.form_master_class||"");
+  if(fm && /^Basic\s*7$/i.test(fm)) fm="Basic 7";
+  if(fm && /^Basic\s*8$/i.test(fm)) fm="Basic 8";
+  if(fm && /^Basic\s*9$/i.test(fm)) fm="Basic 9";
+
+  // IMPORTANT: Form Master and Subject Teacher are independent roles on the same account.
+  // Never let one role overwrite or hide the other. If either the stored Form Master class,
+  // a Form Master role, or a FORM MASTER subject marker exists, preserve that assignment.
+  const roleLooksFormMaster=/form\s*master/i.test(role);
+  const subjectLooksFormMaster=subjectClasses.some(cls=>subjects[cls].some(s=>/form\s*master/i.test(String(s))));
+  if(!fm && roleLooksFormMaster){
+    const basicClasses=classes.filter(c=>subjectClasses.includes(c));
+    if(basicClasses.length===1) fm=basicClasses[0];
+  }
+  if(!fm && subjectLooksFormMaster){
+    const basicClasses=classes.filter(c=>subjectClasses.includes(c));
+    if(basicClasses.length===1) fm=basicClasses[0];
+  }
+  if(fm && subjectClasses.includes(fm)){
+    if(!classes.includes(fm)) classes.push(fm);
+    subjects[fm]=[...new Set([...subjects[fm],"FORM MASTER"])]
+      .sort((a,b)=>String(a).toUpperCase()==="FORM MASTER"?-1:String(b).toUpperCase()==="FORM MASTER"?1:0);
+  }
+
+  x.classes=[...new Set(classes)];
+  x.subjects=subjects;
+  x.role=role || (fm?"FORM MASTER":"");
+  x.teacherRole=normalizeText(x.teacherRole||role||(fm?"FORM MASTER":""));
+  x.formMasterClass=fm;
+  x.dob=x.dob||x.dateOfBirth||"";
+  x.dateOfBirth=x.dateOfBirth||x.dob||"";
+  x.contact=x.contact||x.phone||"";
+  x.appointmentDate=x.appointmentDate||"";
+  x.education=x.education||"";
+  x.authUserId=x.authUserId||x.auth_user_id||"";
+  x.authEmail=x.authEmail||"";
+  return x;
+}
+function mergeTeacherRecords(records){
+  const list=(Array.isArray(records)?records:[]).map(canonicalizeTeacherRecord).filter(Boolean);
+  const groups=new Map();
+  for(const t of list){
+    const username=String(t.username||"").trim().toLowerCase();
+    const authId=String(t.authUserId||t.auth_user_id||"").trim();
+    const key=username ? `username:${username}` : (authId ? `auth:${authId}` : `id:${t.id||Math.random()}`);
+    if(!groups.has(key)) groups.set(key,[]);
+    groups.get(key).push(t);
+  }
+  const merged=[];
+  for(const group of groups.values()){
+    const base={...group[0]};
+    const classes=[];
+    const subjects={"Basic 7":[],"Basic 8":[],"Basic 9":[]};
+    const pushUnique=(arr,value)=>{
+      const v=String(value??"").trim(); if(!v) return;
+      const exists=arr.some(x=>String(x).trim().toUpperCase()===v.toUpperCase());
+      if(!exists) arr.push(v);
+    };
+    for(const t of group){
+      for(const c of (Array.isArray(t.classes)?t.classes:[])) pushUnique(classes,c);
+      for(const cls of ["Basic 7","Basic 8","Basic 9"]){
+        for(const sub of (Array.isArray(t.subjects?.[cls])?t.subjects[cls]:[])) pushUnique(subjects[cls],sub);
+      }
+      if(!base.name && t.name) base.name=t.name;
+      if(!base.contact && t.contact) base.contact=t.contact;
+      if(!base.phone && t.phone) base.phone=t.phone;
+      if(!base.dateOfBirth && (t.dateOfBirth||t.dob)) base.dateOfBirth=t.dateOfBirth||t.dob;
+      if(!base.dob && (t.dob||t.dateOfBirth)) base.dob=t.dob||t.dateOfBirth;
+      if(!base.appointmentDate && t.appointmentDate) base.appointmentDate=t.appointmentDate;
+      if(!base.education && t.education) base.education=t.education;
+      if(!base.photoData && t.photoData) base.photoData=t.photoData;
+      if(!base.authUserId && (t.authUserId||t.auth_user_id)) base.authUserId=t.authUserId||t.auth_user_id;
+      if(!base.authEmail && t.authEmail) base.authEmail=t.authEmail;
+      if(!base.password && t.password) base.password=t.password;
+      if(!base.formMasterClass && (t.formMasterClass||t.form_master_class)) base.formMasterClass=t.formMasterClass||t.form_master_class;
+      if(!base.role && t.role) base.role=t.role;
+      if(!base.teacherRole && t.teacherRole) base.teacherRole=t.teacherRole;
+    }
+    base.classes=classes;
+    base.subjects=subjects;
+    base.formMasterClass=String(base.formMasterClass||base.form_master_class||"").trim();
+    if(base.formMasterClass && ["Basic 7","Basic 8","Basic 9"].includes(base.formMasterClass)){
+      if(!base.classes.includes(base.formMasterClass)) base.classes.push(base.formMasterClass);
+      pushUnique(base.subjects[base.formMasterClass],"FORM MASTER");
+    }
+    const hasFM=Object.values(base.subjects).some(a=>a.some(x=>/form\s*master/i.test(String(x)))) || /form\s*master/i.test(String(base.role||base.teacherRole||""));
+    if(hasFM && !base.formMasterClass){
+      const fmClass=base.classes.filter(c=>["Basic 7","Basic 8","Basic 9"].includes(c));
+      if(fmClass.length===1){ base.formMasterClass=fmClass[0]; pushUnique(base.subjects[fmClass[0]],"FORM MASTER"); }
+    }
+    // Preserve dual-role accounts. A teacher can be BOTH a subject teacher and a
+    // Form Master on the same account. Do not overwrite TEACHER with FORM MASTER.
+    // The actual Form Master assignment is represented by formMasterClass and the
+    // FORM MASTER marker inside the appropriate class subject list.
+    if(hasFM){
+      if(!base.role || !/teacher/i.test(String(base.role)) && /form\s*master/i.test(String(base.role))) {
+        // Keep an explicit TEACHER role when the account also has non-Form-Master subjects.
+        const hasSubjectAssignment=Object.values(base.subjects).some(a=>a.some(x=>! /form\s*master/i.test(String(x))));
+        if(hasSubjectAssignment) base.role="TEACHER";
+      }
+      if(!base.teacherRole || !/teacher/i.test(String(base.teacherRole)) && /form\s*master/i.test(String(base.teacherRole))) {
+        const hasSubjectAssignment=Object.values(base.subjects).some(a=>a.some(x=>! /form\s*master/i.test(String(x))));
+        if(hasSubjectAssignment) base.teacherRole="TEACHER";
+      }
+    }
+    merged.push(canonicalizeTeacherRecord(base));
+  }
+  return merged;
+}
 function normalizeLoadedData(k,v){
   if(v===null || v===undefined) return defaultValueFor(k);
-  if(k === "teachers" && Array.isArray(v)) return v.map(t=>({...t,
-  subjects:t.subjects || {},
-  dob:t.dob || t.dateOfBirth || "",
-  contact:t.contact || "",
-  appointmentDate:t.appointmentDate || "",
-  education:t.education || "",
-  role:t.role || t.teacherRole || "",
-  teacherRole:t.teacherRole || t.role || "",
-  formMasterClass:t.formMasterClass || t.form_master_class || "",
-  authUserId:t.authUserId || "",
-  authEmail:t.authEmail || ""
-}));
+  if(k === "teachers" && Array.isArray(v)) return mergeTeacherRecords(v);
   return v;
 }
 async function invokeStudentData(body){
@@ -537,20 +710,7 @@ async function invokeStudentData(body){
 }
 
 async function loadStudentDataRemote(name, cls, password){
-  const cleanName=String(name||"").replace(/\s+/g," ").trim();
-  const cleanClass=String(cls||"").replace(/\s+/g," ").trim();
-  const cleanPassword=String(password||"").trim();
-  if(!cleanName || !cleanClass || !cleanPassword) throw new Error("Please enter the student name, class and password.");
-  let data;
-  try {
-    data=await invokeStudentData({action:"login",name:cleanName,fullName:cleanName,className:cleanClass,class:cleanClass,password:cleanPassword,passcode:cleanPassword});
-  } catch(firstError) {
-    try {
-      data=await invokeStudentData({action:"student_login",name:cleanName,full_name:cleanName,className:cleanClass,class_name:cleanClass,password:cleanPassword,passcode:cleanPassword});
-    } catch(secondError) {
-      throw secondError?.message ? secondError : firstError;
-    }
-  }
+  const data=await invokeStudentData({action:"login",name, className:cls, password});
   const state=data.state||{};
   const student=state.student||null;
   if(!student?.id) throw new Error("Student profile could not be loaded from the school database.");
@@ -1248,7 +1408,7 @@ function renderNewsItem(n, isAdmin){
     <div class="date">${fmtDate(n.date)}</div>
     <h4>${esc(n.title)}</h4>
     ${n.message ? `<p>${esc(n.message)}</p>` : ""}
-    ${Array.isArray(n.media)&&n.media.length ? `<div class="news-media-grid">${n.media.map((m,i)=>m.type==="video" ? `<video controls preload="metadata" style="width:100%;max-height:420px;border-radius:10px;background:#000;" src="${esc(m.data)}"></video>` : `<img loading="lazy" src="${esc(m.data)}" alt="Announcement picture ${i+1}" style="width:100%;max-height:420px;object-fit:cover;border-radius:10px;display:block;">`).join("")}</div>` : (n.mediaData ? (n.mediaType==="video" ? `<video controls preload="metadata" style="width:100%;max-height:420px;border-radius:10px;background:#000;" src="${esc(n.mediaData)}"></video>` : `<img loading="lazy" src="${esc(n.mediaData)}" alt="Announcement picture" style="width:100%;max-height:420px;object-fit:cover;border-radius:10px;display:block;">`) : "")}
+    ${Array.isArray(n.media)&&n.media.length ? `<div class="news-media-grid">${n.media.map((m,i)=>m.type==="video" ? `<video controls preload="metadata" style="width:100%;max-height:420px;border-radius:10px;background:#000;" src="${esc(m.data)}"></video>` : `<img loading="lazy" src="${esc(m.data)}" alt="Announcement picture ${i+1}" style="width:100%;max-height:420px;object-fit:contain;border-radius:10px;display:block;background:#f3f4f6;">`).join("")}</div>` : (n.mediaData ? (n.mediaType==="video" ? `<video controls preload="metadata" style="width:100%;max-height:420px;border-radius:10px;background:#000;" src="${esc(n.mediaData)}"></video>` : `<img loading="lazy" src="${esc(n.mediaData)}" alt="Announcement picture" style="width:100%;max-height:420px;object-fit:contain;border-radius:10px;display:block;background:#f3f4f6;">`) : "")}
     ${n.countdownDate ? `<div class="countdown">${days>=0 ? days+" day(s) to "+fmtDate(n.countdownDate) : "Date passed — "+fmtDate(n.countdownDate)}</div>` : ""}
     ${isAdmin ? `<div style="margin-top:10px;"><button class="btn btn-danger btn-sm" data-delete-news="${n.id}">Delete</button></div>` : ""}
   </div>`;
@@ -1608,24 +1768,12 @@ function attachHandlers(){
       uiState.loginError=next.lockedUntil>Date.now()?loginLockMessage(next):"Incorrect username or password. Check the details entered by the admin.";
       render();return false;
     }
-    const assignedClasses=Array.isArray(t.classes)?t.classes.flatMap(expandTeacherClassGroup):[];
+    const assignedClasses=Array.isArray(t.classes)?t.classes:[];
     if(!assignedClasses.includes(selectedClass)){uiState.loginError=`You are not assigned to ${selectedClass}. Ask the admin to assign that class to your account.`;render();return false;}
     if(["Basic 7","Basic 8","Basic 9"].includes(selectedClass)){
       const assignedSubjects=(t.subjects&&Array.isArray(t.subjects[selectedClass]))?t.subjects[selectedClass]:[];
       if(!selectedSubject){uiState.loginError=`Select your assigned subject or role for ${selectedClass}.`;render();return false;}
-      const legacyFormMaster =
-        String(selectedSubject).trim().toUpperCase()===FORM_MASTER_ROLE &&
-        (
-          String(t.formMasterClass||t.form_master_class||"").trim()===selectedClass ||
-          String(t.role||t.teacherRole||"").trim().toUpperCase()===FORM_MASTER_ROLE ||
-          (assignedClasses.length===1 && assignedClasses[0]===selectedClass &&
-           ["Basic 7","Basic 8","Basic 9"].every(c=>{
-             const list=t.subjects&&Array.isArray(t.subjects[c])?t.subjects[c]:[];
-             return list.length===0 || list.every(v=>String(v).trim().toUpperCase()===FORM_MASTER_ROLE);
-           }))
-        );
-      if(!assignedSubjects.includes(selectedSubject) && !legacyFormMaster){uiState.loginError=`Access denied: ${selectedSubject} is not assigned to you for ${selectedClass}. Ask the admin to check your teacher assignment.`;render();return false;}
-      if(legacyFormMaster){ t.subjects=t.subjects||{}; t.subjects[selectedClass]=[FORM_MASTER_ROLE]; }
+      if(!assignedSubjects.includes(selectedSubject)){uiState.loginError=`Access denied: ${selectedSubject} is not assigned to you for ${selectedClass}. Ask the admin to check your teacher assignment.`;render();return false;}
     }
     clearLoginFailures("teacher",u);
     DB.teachers=teachers.map(x=>({...x,subjects:x.subjects||{}}));
@@ -2671,7 +2819,7 @@ function populateEditTeacherSubjects(){
   if(!sel||!wrap) return;
   const t=uiState.editingTeacher ? DB.teachers.find(x=>x.id===uiState.editingTeacher) : null;
   const selected=Array.from(sel.selectedOptions).map(o=>o.value).filter(c=>["Basic 7","Basic 8","Basic 9"].includes(c));
-  wrap.innerHTML=selected.length ? selected.map(cls=>`<div style="border:1px solid var(--line);padding:10px;border-radius:4px;margin-bottom:8px;background:var(--paper);"><b style="display:block;margin-bottom:7px;color:var(--ink);">${cls}</b><div class="pill-input">${BASIC_7_9_SUBJECTS.filter(subject=>subject!=="FORM MASTER").map(subject=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:5px;margin-right:8px;margin-bottom:5px;"><input type="checkbox" data-edit-basic-subject="${cls}" value="${esc(subject)}" ${((t?.subjects?.[cls]||[]).includes(subject))?"checked":""}> ${esc(subject)}</label>`).join("")}</div><p class="help-note" style="margin-top:6px;">To assign FORM MASTER, select <b>FORM MASTER (Basic 7 / 8 / 9)</b> in the class / role selector above.</p></div>`).join("") : `<p class="help-note">Select Basic 7, Basic 8 or Basic 9 to assign subjects.</p>`;
+  wrap.innerHTML=selected.length ? selected.map(cls=>`<div style="border:1px solid var(--line);padding:10px;border-radius:4px;margin-bottom:8px;background:var(--paper);"><b style="display:block;margin-bottom:7px;color:var(--ink);">${cls}</b><div class="pill-input">${BASIC_7_9_SUBJECTS.map(subject=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:5px;margin-right:8px;margin-bottom:5px;"><input type="checkbox" data-edit-basic-subject="${cls}" value="${esc(subject)}" ${((t?.subjects?.[cls]||[]).includes(subject))?"checked":""}> ${esc(subject)}</label>`).join("")}</div></div>`).join("") : `<p class="help-note">Select Basic 7, Basic 8 or Basic 9 to assign subjects.</p>`;
 }
 const _baseAttachModalHandlers=attachModalHandlers;
 attachModalHandlers=function(){
@@ -2856,7 +3004,11 @@ function rememberTeacherDraft(){
     education:document.getElementById("detail-t-education")?.value||"",
     photoData:uiState.teacherDraft?.photoData||"",
     classes:Array.from(document.getElementById("detail-t-classes")?.selectedOptions||[]).map(o=>o.value),
-    subjects:{...((uiState.teacherDraft&&uiState.teacherDraft.subjects)||{})}
+    subjects:{...((uiState.teacherDraft&&uiState.teacherDraft.subjects)||{})},
+    role:document.getElementById("detail-t-role")?.value||"TEACHER",
+    teacherRole:document.getElementById("detail-t-role")?.value||"TEACHER",
+    formMasterClass:document.getElementById("detail-t-form-master-class")?.value||"",
+    form_master_class:document.getElementById("detail-t-form-master-class")?.value||""
   };
 }
 
@@ -2933,9 +3085,71 @@ function adminStudentsPanel(cls,list){
 }
 
 function adminTeachersPanel(){
-  const groups=CLASSES.map(cls=>({cls,teachers:(DB.teachers||[]).filter(t=>(t.classes||[]).includes(cls))})).filter(g=>g.teachers.length), unassigned=(DB.teachers||[]).filter(t=>!(t.classes||[]).length);
-  const table=(title,ts)=>`<div class="card" style="margin-top:14px;"><div class="row" style="justify-content:space-between"><h3>${esc(title)}</h3><span class="badge badge-pending">${ts.length}</span></div><table><thead><tr><th>Name</th><th>DOB</th><th>Age</th><th>Contact</th><th>Appointment</th><th>Education</th><th>Username</th><th>Password</th><th>Class(es)</th><th></th></tr></thead><tbody>${ts.map(t=>`<tr><td>${esc(t.name)}</td><td>${t.dateOfBirth?fmtDate(t.dateOfBirth):"—"}</td><td>${t.dateOfBirth?calculateAgeFromDob(t.dateOfBirth):esc(t.age??"—")}</td><td>${esc(t.contact||"—")}</td><td>${t.appointmentDate?fmtDate(t.appointmentDate):"—"}</td><td>${esc(t.education||"—")}</td><td class="mono">${esc(t.username)}</td><td>${renderPasswordCell(t.password, "teacher-final-"+t.id)}</td><td>${(t.classes||[]).map(c=>`<div><b>${esc(c)}</b>${(t.subjects?.[c]||[]).length?` <span class="help-note">— ${esc((t.subjects[c]||[]).join(", "))}</span>`:""}</div>`).join("")}</td><td><button class="btn btn-outline btn-sm" data-edit-teacher="${t.id}">Edit / Change passcode</button> <button class="btn btn-outline btn-sm" data-reset-teacher-pass="${t.id}">Reset passcode</button> <button class="btn btn-danger btn-sm" data-remove-teacher="${t.id}">Remove</button></td></tr>`).join("")}</tbody></table></div>`;
-  return `<div class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div><h3>Teachers by class</h3><p class="card-sub">Basic 7–9 is managed as one teacher account with a class selected at login.</p></div><div class="row"><button class="btn btn-outline btn-sm" id="download-teachers-pdf">Download Teacher List</button><button class="btn btn-gold btn-sm" id="add-teacher-btn">+ Add teacher</button></div></div>${groups.map(g=>table(g.cls,g.teachers)).join("")}${unassigned.length?table("Unassigned",unassigned):""}</div>`;
+  const teachers=Array.isArray(DB.teachers)?DB.teachers:[];
+  const normalizeList=v=>{
+    if(Array.isArray(v)) return v.map(x=>String(x||"").trim()).filter(Boolean);
+    if(typeof v==="string") return v.split(/[,;|]/).map(x=>x.trim()).filter(Boolean);
+    return [];
+  };
+  const canonicalClasses=t=>{
+    let out=normalizeList(t?.classes||t?.assignedClasses||t?.assignedClass||t?.class||t?.formMasterClass);
+    const expanded=[];
+    out.forEach(c=>{
+      const x=String(c).trim();
+      if(/basic\s*7\s*[-–]\s*9/i.test(x)) expanded.push("Basic 7","Basic 8","Basic 9");
+      else if(/^7$/i.test(x)) expanded.push("Basic 7");
+      else if(/^8$/i.test(x)) expanded.push("Basic 8");
+      else if(/^9$/i.test(x)) expanded.push("Basic 9");
+      else expanded.push(x);
+    });
+    return [...new Set(expanded)];
+  };
+  const subjectsFor=(t,cls)=>{
+    const raw=t?.subjects;
+    let list=[];
+    if(raw && !Array.isArray(raw) && typeof raw==="object") list=normalizeList(raw[cls]);
+    else list=normalizeList(raw);
+    if(!list.length){
+      list=normalizeList(t?.subject||t?.assignedSubject||t?.teacherSubject);
+    }
+    return [...new Set(list)];
+  };
+  const roleList=(t,cls)=>{
+    const roles=[];
+    const rawRole=String(t?.teacherRole||t?.role||t?.staffRole||"").trim();
+    const formClass=String(t?.formMasterClass||t?.form_master_class||"").trim();
+    const subjects=subjectsFor(t,cls);
+    if(formClass && formClass===cls) roles.push("FORM MASTER");
+    if(subjects.some(s=>String(s).toUpperCase()==="FORM MASTER" || String(s).toUpperCase()==="FORMMASTER")) roles.push("FORM MASTER");
+    if(/form\s*master/i.test(rawRole) && (!formClass || formClass===cls)) roles.push("FORM MASTER");
+    if(rawRole && !/^(teacher|subject\s*teacher|staff)$/i.test(rawRole) && !/form\s*master/i.test(rawRole)) roles.push(rawRole);
+    return [...new Set(roles)];
+  };
+  const assignmentRows=t=>{
+    const classes=canonicalClasses(t);
+    if(!classes.length){
+      const roles=roleList(t,"");
+      const subjects=subjectsFor(t,"");
+      const teacherName=String(t?.name||"Teacher").trim();
+      const teacherContact=String(t?.contact||t?.phone||"").trim();
+      const contactHtml=teacherContact ? `<span class="assignment-teacher-contact">• ${esc(teacherContact)}</span>` : `<span class="assignment-teacher-contact">• No contact saved</span>`;
+      return `<div class="assignment-unassigned"><b>${esc(teacherName)} ${contactHtml}</b><div style="margin-top:5px;">Not assigned to a class</div>${roles.length?`<div><span class="assignment-label">Role:</span> ${roles.map(r=>`<span class="assignment-chip role-chip">${esc(r)}</span>`).join(" ")}</div>`:""}${subjects.length?`<div><span class="assignment-label">Subject:</span> ${subjects.map(r=>`<span class="assignment-chip">${esc(r)}</span>`).join(" ")}</div>`:""}</div>`;
+    }
+    return classes.map(cls=>{
+      const subjects=subjectsFor(t,cls).filter(s=>String(s).toUpperCase()!=="FORM MASTER" && String(s).toUpperCase()!=="FORMMASTER");
+      const roles=roleList(t,cls);
+      const all=[...roles.map(r=>`<span class="assignment-chip role-chip">${esc(r)}</span>`),...subjects.map(s=>`<span class="assignment-chip">${esc(s)}</span>`)];
+      const assignmentHtml=all.length?all.join(" "):"<span class=\"help-note\">No subject or role assigned</span>";
+      const teacherName=String(t?.name||"Teacher").trim();
+      const teacherContact=String(t?.contact||t?.phone||"").trim();
+      const contactHtml=teacherContact ? `<span class="assignment-teacher-contact">• ${esc(teacherContact)}</span>` : `<span class="assignment-teacher-contact">• No contact saved</span>`;
+      return `<div class="assignment-class"><div class="assignment-class-title">${esc(cls)}</div><div class="assignment-teacher-line">${esc(teacherName)} ${contactHtml}</div><div class="assignment-items">${assignmentHtml}</div></div>`;
+    }).join("");
+  };
+  const groups=CLASSES.map(cls=>({cls,teachers:teachers.filter(t=>canonicalClasses(t).includes(cls))})).filter(g=>g.teachers.length);
+  const unassigned=teachers.filter(t=>!canonicalClasses(t).length);
+  const table=(title,ts)=>`<div class="card" style="margin-top:14px;"><div class="row" style="justify-content:space-between"><h3>${esc(title)}</h3><span class="badge badge-pending">${ts.length}</span></div><div class="help-note" style="margin:0 0 10px;">Each assignment below shows the teacher's class, every subject and every special role. A teacher can have more than one role.</div><div style="overflow-x:auto;"><table><thead><tr><th>Name</th><th>DOB</th><th>Age</th><th>Contact</th><th>Appointment</th><th>Education</th><th>Username</th><th>Password</th><th style="min-width:300px;">Classes &amp; Assigned Subjects / Roles</th><th></th></tr></thead><tbody>${ts.map(t=>`<tr><td><b>${esc(t.name)}</b></td><td>${t.dateOfBirth?fmtDate(t.dateOfBirth):esc(t.dob?fmtDate(t.dob):"—")}</td><td>${t.dateOfBirth?calculateAgeFromDob(t.dateOfBirth):esc(t.age??"—")}</td><td>${esc(t.contact||"—")}</td><td>${t.appointmentDate?fmtDate(t.appointmentDate):"—"}</td><td>${esc(t.education||"—")}</td><td class="mono">${esc(t.username)}</td><td>${renderPasswordCell(t.password, "teacher-final-"+t.id)}</td><td>${assignmentRows(t)}</td><td><button class="btn btn-outline btn-sm" data-edit-teacher="${t.id}">Edit / Change passcode</button> <button class="btn btn-outline btn-sm" data-reset-teacher-pass="${t.id}">Reset passcode</button> <button class="btn btn-danger btn-sm" data-remove-teacher="${t.id}">Remove</button></td></tr>`).join("")}</tbody></table></div></div>`;
+  return `<div class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div><h3>Teachers &amp; Assignments</h3><p class="card-sub">The Admin panel now shows every teacher's class, all assigned subjects, and all special roles. Form Masters can also appear as subject teachers on the same account.</p></div><div class="row"><button class="btn btn-outline btn-sm" id="download-teachers-pdf">Download Teacher List</button><button class="btn btn-gold btn-sm" id="add-teacher-btn">+ Add teacher</button></div></div>${groups.map(g=>table(g.cls,g.teachers)).join("")}${unassigned.length?table("Unassigned",unassigned):""}</div>`;
 }
 
 function teacherDetailsModal(t){
@@ -2951,120 +3165,73 @@ function teacherDetailsModal(t){
     </div>
     <div class="field"><label>Date of Appointment</label><input type="date" id="detail-t-appointment" value="${esc(x.appointmentDate||"")}"></div>
     <div class="field"><label>Level of Education</label><input type="text" id="detail-t-education" value="${esc(x.education||"")}" placeholder="e.g. Diploma, Degree, Master's"></div>
-    <div class="field"><label>Class / class group / role</label><select id="detail-t-classes" multiple size="8">${TEACHER_CLASS_GROUPS.map(c=>{const ex=expandTeacherClassGroup(c);const selected=ex.every(v=>(x.classes||[]).includes(v));return `<option value="${c}" ${selected?"selected":""}>${c}</option>`}).join("")}<option value="__FORM_MASTER__">FORM MASTER (Basic 7 / 8 / 9)</option></select><div id="form-master-picker" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.025);"><b>Select Form Master class</b><div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;"><label><input type="radio" name="form-master-class" value="Basic 7"> Basic 7</label><label><input type="radio" name="form-master-class" value="Basic 8"> Basic 8</label><label><input type="radio" name="form-master-class" value="Basic 9"> Basic 9</label></div><p class="help-note" style="margin-top:8px;">A Form Master can control one class only.</p></div><p class="help-note">Subject teachers may be assigned to multiple classes. Select <b>FORM MASTER</b> above to open the Form Master class selector.</p><p id="form-master-class-warning" class="help-note" style="display:none;color:var(--rust);font-weight:600;"></p></div>
+    <div class="field"><label>Class / class group</label><select id="detail-t-classes" multiple size="6">${TEACHER_CLASS_GROUPS.map(c=>{const ex=expandTeacherClassGroup(c);const selected=ex.every(v=>(x.classes||[]).includes(v));return `<option value="${c}" ${selected?"selected":""}>${c}</option>`}).join("")}</select><p class="help-note">Subject teachers may be assigned to multiple classes. For a Form Master, select the Form Master option below and then choose Basic 7, Basic 8 or Basic 9.</p></div>
+    <div class="field">
+      <label>Teacher role</label>
+      <select id="detail-t-role">
+        <option value="TEACHER">Subject Teacher</option>
+        <option value="FORM MASTER">Form Master</option>
+        <option value="TEACHER + FORM MASTER">Subject Teacher + Form Master</option>
+      </select>
+      <p class="help-note" style="margin-top:5px;">Choose <b>Form Master</b> when this teacher is responsible for a class. A teacher can also be both a subject teacher and a Form Master.</p>
+    </div>
+    <div class="field" id="form-master-class-field" style="display:none;">
+      <label>Form Master Class</label>
+      <select id="detail-t-form-master-class">
+        <option value="">Select Form Master class</option>
+        <option value="Basic 7">Basic 7</option>
+        <option value="Basic 8">Basic 8</option>
+        <option value="Basic 9">Basic 9</option>
+      </select>
+      <p class="help-note" style="margin-top:5px;">Select the one class this Form Master controls.</p>
+    </div>
     <div class="field"><label>Basic 7–9 subject(s)</label><div id="edit-basic-subjects-list"></div></div>
     <div class="row" style="justify-content:flex-end"><button type="button" class="btn btn-outline" id="cancel-teacher-details">Cancel</button><button class="btn btn-primary" type="submit">${editing?"Save changes":"Create account"}</button></div>
   </form></div></div>`;
 }
-function populateEditTeacherSubjects(){
-  const sel=document.getElementById("detail-t-classes"),wrap=document.getElementById("edit-basic-subjects-list");
-  if(!sel||!wrap)return;
-  const t=uiState.editingTeacher?DB.teachers.find(x=>x.id===uiState.editingTeacher):null;
-  const currentChecked=Array.from(wrap.querySelectorAll('[data-edit-basic-subject="all"]:checked')).map(el=>el.value);
-  const hasCurrentChoices=wrap.querySelectorAll('[data-edit-basic-subject="all"]').length>0;
-  const basic=Array.from(sel.selectedOptions).flatMap(o=>expandTeacherClassGroup(o.value)).filter(c=>["Basic 7","Basic 8","Basic 9"].includes(c));
-  const existingSubjects=basic.flatMap(c=>t?.subjects?.[c]||[]);
-  const checkedSubjects=hasCurrentChoices?currentChecked:existingSubjects;
-  wrap.innerHTML=basic.length?`<div class="help-note">Select the subject(s) or choose <b>FORM MASTER</b>. A Form Master must have exactly one Basic class.</div><div class="pill-input">${BASIC_7_9_SUBJECTS.map(sub=>`<label style="display:inline-flex;gap:5px;margin-right:8px;margin-bottom:5px;"><input type="checkbox" data-edit-basic-subject="all" value="${esc(sub)}" ${checkedSubjects.includes(sub)?"checked":""}> ${esc(sub)}</label>`).join("")}</div>`:`<p class="help-note">Select Basic 7, Basic 8 or Basic 9 to assign subjects or a Form Master role.</p>`;
-}
+function populateEditTeacherSubjects(){ const sel=document.getElementById("detail-t-classes"),wrap=document.getElementById("edit-basic-subjects-list"); if(!sel||!wrap)return; const t=uiState.editingTeacher?DB.teachers.find(x=>x.id===uiState.editingTeacher):null; const basic=Array.from(sel.selectedOptions).flatMap(o=>expandTeacherClassGroup(o.value)).filter(c=>["Basic 7","Basic 8","Basic 9"].includes(c)); wrap.innerHTML=basic.length?`<div class="help-note">Subjects apply to the Basic 7–9 account.</div><div class="pill-input">${BASIC_7_9_SUBJECTS.map(sub=>`<label style="display:inline-flex;gap:5px;margin-right:8px;margin-bottom:5px;"><input type="checkbox" data-edit-basic-subject="all" value="${esc(sub)}" ${basic.some(c=>(t?.subjects?.[c]||[]).includes(sub))?"checked":""}> ${esc(sub)}</label>`).join("")}</div>`:`<p class="help-note">Select Basic 7–9 to assign subjects.</p>`; }
 
-function addTeacherClassesFromForm(){
-  const sel=document.getElementById("detail-t-classes");
-  const selected=Array.from(sel?.selectedOptions||[]).map(o=>o.value);
-  if(selected.includes("__FORM_MASTER__")){
-    const picked=document.querySelector('input[name="form-master-class"]:checked')?.value||"";
-    return picked?[picked]:[];
-  }
-  return [...new Set(selected.filter(v=>v!=="__FORM_MASTER__").flatMap(expandTeacherClassGroup))];
-}
+function addTeacherClassesFromForm(){ const selected=Array.from(document.getElementById("detail-t-classes")?.selectedOptions||[]).map(o=>o.value); return [...new Set(selected.flatMap(expandTeacherClassGroup))]; }
 function selectedBasicTeacherClassesFromForm(){
   return addTeacherClassesFromForm().filter(c=>["Basic 7","Basic 8","Basic 9"].includes(c));
 }
+function formMasterRoleForForm(){
+  const role=String(document.getElementById("detail-t-role")?.value||"").trim().toUpperCase();
+  return role==="FORM MASTER" || role==="TEACHER + FORM MASTER";
+}
 function formMasterCheckedForForm(){
-  const sel=document.getElementById("detail-t-classes");
-  return Array.from(sel?.selectedOptions||[]).some(o=>o.value==="__FORM_MASTER__");
+  return formMasterRoleForForm() || Array.from(document.querySelectorAll('[data-edit-basic-subject]:checked')).some(el=>String(el.value).trim().toUpperCase()==='FORM MASTER');
 }
 function enforceFormMasterClassRule(showMessage=true){
-  const classes=addTeacherClassesFromForm();
-  const isFM=formMasterCheckedForForm();
-  if(!isFM) return true;
-  if(classes.length!==1 || !["Basic 7","Basic 8","Basic 9"].includes(classes[0])){
-    if(showMessage) showToast("Choose exactly one Form Master class: Basic 7, Basic 8, or Basic 9.");
+  if(!formMasterRoleForForm()) return true;
+  const fmClass=String(document.getElementById("detail-t-form-master-class")?.value||"").trim();
+  if(!["Basic 7","Basic 8","Basic 9"].includes(fmClass)){
+    if(showMessage) showToast("Select the Form Master class: Basic 7, Basic 8, or Basic 9.");
     return false;
   }
   return true;
 }
 function bindFormMasterClassRule(){
-  const sel=document.getElementById("detail-t-classes");
+  const sel=document.getElementById('detail-t-classes');
+  const roleSel=document.getElementById('detail-t-role');
+  const fmClassSel=document.getElementById('detail-t-form-master-class');
+  const fmField=document.getElementById('form-master-class-field');
   if(!sel) return;
-  const picker=document.getElementById("form-master-picker");
-  const BASIC_CLASSES=["Basic 7","Basic 8","Basic 9"];
-  const fmOption=()=>Array.from(sel.options).find(o=>o.value==="__FORM_MASTER__");
-  const isFMSelected=()=>!!fmOption()?.selected;
-
-  const existingTeacher=uiState.editingTeacher
-    ? (DB.teachers||[]).find(t=>t.id===uiState.editingTeacher)
-    : null;
-  const draftSubjects=uiState.teacherDraft?.subjects||{};
-  const existingFMClass=BASIC_CLASSES.find(cls =>
-    Array.isArray(existingTeacher?.subjects?.[cls]) &&
-    existingTeacher.subjects[cls].some(v=>String(v).trim().toUpperCase()==="FORM MASTER")
-  );
-  const draftFMClass=BASIC_CLASSES.find(cls =>
-    Array.isArray(draftSubjects?.[cls]) &&
-    draftSubjects[cls].some(v=>String(v).trim().toUpperCase()==="FORM MASTER")
-  );
-
-  // Existing Form Master accounts open directly in Form Master mode and keep
-  // their previously assigned Basic class.
-  if((existingFMClass||draftFMClass) && fmOption()){
-    Array.from(sel.options).forEach(o=>o.selected=(o.value==="__FORM_MASTER__"));
-  }
-
   const refresh=()=>{
-    const hasFM=isFMSelected();
-    if(hasFM){
-      // FORM MASTER is a role, not a real class. The actual stored class
-      // comes only from the Basic 7/8/9 picker below.
-      Array.from(sel.options).forEach(o=>{ if(o.value!=="__FORM_MASTER__") o.selected=false; });
-      if(picker) picker.style.display="block";
-
-      const wanted=existingFMClass||draftFMClass||"";
-      let radio=document.querySelector('input[name="form-master-class"]:checked');
-      if(!radio && wanted){
-        radio=document.querySelector(`input[name="form-master-class"][value="${wanted}"]`);
-        if(radio) radio.checked=true;
-      }
-
-      // Keep the role visible and guaranteed to be stored for the chosen class.
-      const roleBox=document.getElementById("edit-basic-subjects-list");
-      if(roleBox){
-        const chosen=radio?.value||"";
-        roleBox.innerHTML=chosen
-          ? `<div class="help-note">FORM MASTER mode is active for <b>${esc(chosen)}</b>. No subject is required for this account.</div><label style="display:inline-flex;align-items:center;gap:7px;margin-top:8px;font-weight:600;color:var(--ink);"><input type="checkbox" data-edit-basic-subject="form-master-role" value="FORM MASTER" checked> FORM MASTER</label>`
-          : `<div class="help-note" style="color:var(--rust);font-weight:600;">Choose Basic 7, Basic 8, or Basic 9 above to complete the Form Master assignment.</div>`;
-      }
-      Array.from(sel.options).forEach(o=>{o.disabled=o.value!=="__FORM_MASTER__";});
-    }else{
-      if(picker) picker.style.display="none";
-      Array.from(sel.options).forEach(o=>o.disabled=false);
-      populateEditTeacherSubjects();
-    }
+    const role=String(roleSel?.value||"TEACHER").trim().toUpperCase();
+    const hasFM=role==="FORM MASTER" || role==="TEACHER + FORM MASTER";
+    if(fmField) fmField.style.display=hasFM?'block':'none';
+    const selectedFMClass=String(fmClassSel?.value||"").trim();
+    Array.from(sel.options).forEach(o=>{ o.disabled=hasFM && o.value==="Basic 7–9"; });
+    const warning=document.getElementById('form-master-class-warning');
+    if(warning){ warning.style.display=hasFM?'block':'none'; warning.textContent=hasFM ? `FORM MASTER selected: ${selectedFMClass||"choose Basic 7, Basic 8 or Basic 9 above"}.` : ''; }
   };
-
-  sel.addEventListener("change",()=>{
-    if(isFMSelected()) Array.from(sel.options).forEach(o=>{if(o.value!=="__FORM_MASTER__")o.selected=false;});
-    refresh();
-  });
-
-  document.querySelectorAll('input[name="form-master-class"]').forEach(r=>r.addEventListener("change",()=>{
-    Array.from(sel.options).forEach(o=>{o.selected=(o.value==="__FORM_MASTER__");});
-    refresh();
-  }));
-
+  if(!sel.dataset.fmBound){ sel.addEventListener('change',refresh); sel.dataset.fmBound='1'; }
+  if(roleSel && !roleSel.dataset.fmBound){ roleSel.addEventListener('change',refresh); roleSel.dataset.fmBound='1'; }
+  if(fmClassSel && !fmClassSel.dataset.fmBound){ fmClassSel.addEventListener('change',refresh); fmClassSel.dataset.fmBound='1'; }
+  document.querySelectorAll('[data-edit-basic-subject]').forEach(el=>{ if(!el.dataset.fmBound){el.addEventListener('change',refresh);el.dataset.fmBound='1';} });
   refresh();
 }
-
 function downloadClassStudentsPdf(cls){
   const {jsPDF}=window.jspdf; if(!jsPDF){showToast("PDF library is unavailable.");return;} const doc=new jsPDF(); addSchoolLogoToPdf(doc); const list=studentsInClass(cls); doc.setFontSize(16);doc.text(SCHOOL_NAME,14,18);doc.setFontSize(12);doc.text(`${cls} Student Register — ${academicYear()}`,14,27); let y=38; doc.setFontSize(9); doc.text("Name",14,y);doc.text("Gender",75,y);doc.text("DOB",105,y);doc.text("Age",145,y);doc.text("Parent Contact",165,y);y+=6;doc.line(14,y-3,198,y-3);list.forEach(s=>{if(y>280){doc.addPage();y=20;}doc.text(String(s.name||"").slice(0,32),14,y);doc.text(genderLabel(s.gender),75,y);doc.text(s.dateOfBirth?fmtDate(s.dateOfBirth):"-",105,y);doc.text(String(s.dateOfBirth?calculateAgeFromDob(s.dateOfBirth):(s.age??"-")),145,y);doc.text(String(s.parentContact||"-").slice(0,20),165,y);y+=7;});doc.save(`${cls.replace(/\s+/g,"_")}_students_${academicYear().replace("/","-")}.pdf`);
 }
@@ -3301,46 +3468,22 @@ attachHandlers= function(){
       const teacherRemote=await loadTeacherDataRemote();
       const teachers=Array.isArray(DB.teachers)?DB.teachers:[];
       const normalized=username.toLowerCase();
-      const teacher=teachers.find(t=>t&&String(t.username||"").trim().toLowerCase()===normalized);
+      const matchingTeachers=teachers.filter(t=>t&&String(t.username||"").trim().toLowerCase()===normalized);
+      // Database now stores one record per teacher. mergeTeacherRecords remains as a
+      // safety net for older cached/remote data, but never creates a second login.
+      const teacher=matchingTeachers.length ? mergeTeacherRecords(matchingTeachers)[0] : null;
       if(!teacher){ await supabaseClient.auth.signOut(); throw new Error("Teacher profile could not be loaded from the school database."); }
 
       const assignedClasses=Array.isArray(teacher.classes)?teacher.classes.flatMap(expandTeacherClassGroup):[];
       if(!assignedClasses.includes(selectedClass)) throw new Error(`You are not assigned to ${selectedClass}. Ask the admin to assign that class to your account.`);
       if(["Basic 7","Basic 8","Basic 9"].includes(selectedClass)){
         const assignedSubjects=teacher.subjects&&Array.isArray(teacher.subjects[selectedClass])?teacher.subjects[selectedClass]:[];
-        const normalizedSelectedSubject=String(selectedSubject||"").trim().toUpperCase();
-        const explicitFormMasterClass=String(teacher.formMasterClass||teacher.form_master_class||"").trim();
-        const explicitRole=String(teacher.role||teacher.teacherRole||"").trim().toUpperCase();
-
-        // Current records store FORM MASTER inside subjects[class]. Legacy records may
-        // have the correct class assignment but be missing that subject entry. Treat a
-        // single-class account with an explicit Form Master marker as the same role.
-        const legacyFormMaster =
-          normalizedSelectedSubject===FORM_MASTER_ROLE &&
-          (explicitFormMasterClass===selectedClass ||
-           explicitRole===FORM_MASTER_ROLE ||
-           (
-             assignedClasses.length===1 &&
-             assignedClasses[0]===selectedClass &&
-             ["Basic 7","Basic 8","Basic 9"].every(c=>{
-               const list=teacher.subjects&&Array.isArray(teacher.subjects[c])?teacher.subjects[c]:[];
-               return list.length===0 || list.every(v=>String(v).trim().toUpperCase()===FORM_MASTER_ROLE);
-             })
-           ));
-
-        if(!assignedSubjects.includes(selectedSubject) && !legacyFormMaster){
-          throw new Error(`You are not assigned to ${selectedSubject} for ${selectedClass}. Ask the admin to update your teacher account.`);
-        }
-
-        // Repair the assignment in the in-memory record so the session and future
-        // saves consistently recognize the Form Master role for this class.
-        if(legacyFormMaster){
-          teacher.subjects=teacher.subjects&&typeof teacher.subjects==="object"?teacher.subjects:{};
-          teacher.subjects[selectedClass]=[FORM_MASTER_ROLE];
-          teacher.role=FORM_MASTER_ROLE;
-          teacher.teacherRole=FORM_MASTER_ROLE;
-          teacher.formMasterClass=selectedClass;
-        }
+        const normSubject=v=>String(v||"").trim().toUpperCase().replace(/[._-]+/g," ").replace(/\s+/g," ");
+        const alias={"ENGLISH":"ENGLISH LANGUAGE","ENGLISH LANGUAGE":"ENGLISH LANGUAGE","INTEGRATED SCIENCE":"INTERGRATED SCIENCE","INTEGRATED SCIENCE":"INTERGRATED SCIENCE","CAREER TECHNOLOGY":"CARIER TECHNOLOGY","GONLA":"GONJA","GONJA":"GONJA","FORMMASTER":"FORM MASTER","FORM MASTER":"FORM MASTER"};
+        const canonicalSubject=v=>alias[normSubject(v)]||normSubject(v);
+        const requested=canonicalSubject(selectedSubject);
+        const assigned=assignedSubjects.map(canonicalSubject);
+        if(!assigned.includes(requested)) throw new Error(`You are not assigned to ${selectedSubject} for ${selectedClass}. Ask the admin to update your teacher account.`);
       }
 
       session={
@@ -3375,7 +3518,7 @@ renderModals=function(){
   const holder=document.getElementById("modal-root"); if(!holder)return;
   const sf=document.getElementById("student-details-form");
   if(sf){ const draft=uiState.studentDraft||{}; for(const [id,val] of Object.entries({"detail-stu-name":draft.name,"detail-stu-class":draft.class,"detail-stu-gender":draft.gender,"detail-stu-dob":draft.dateOfBirth,"detail-stu-parent":draft.parentContact,"detail-stu-guardian":draft.guardian})) if(val!==undefined){const el=document.getElementById(id);if(el)el.value=val;} }
-  const tf=document.getElementById("teacher-details-form"); if(tf){const d=uiState.teacherDraft||{};for(const [id,val] of Object.entries({"detail-t-name":d.name,"detail-t-user":d.username,"detail-t-pass":d.password,"detail-t-dob":d.dob,"detail-t-contact":d.contact,"detail-t-appointment":d.appointmentDate,"detail-t-education":d.education}))if(val!==undefined){const el=document.getElementById(id);if(el)el.value=val;}if(d.classes?.length){const sel=document.getElementById("detail-t-classes");if(sel)Array.from(sel.options).forEach(o=>o.selected=d.classes.includes(o.value));populateEditTeacherSubjects();}bindFormMasterClassRule();}
+  const tf=document.getElementById("teacher-details-form"); if(tf){const d=uiState.teacherDraft||{};for(const [id,val] of Object.entries({"detail-t-name":d.name,"detail-t-user":d.username,"detail-t-pass":d.password,"detail-t-dob":d.dob,"detail-t-contact":d.contact,"detail-t-appointment":d.appointmentDate,"detail-t-education":d.education}))if(val!==undefined){const el=document.getElementById(id);if(el)el.value=val;}const roleEl=document.getElementById("detail-t-role");if(roleEl){const existingRole=String(d.teacherRole||d.role||"").toUpperCase();roleEl.value=existingRole==="FORM MASTER" ? "FORM MASTER" : (existingRole==="TEACHER + FORM MASTER" || (d.formMasterClass||d.form_master_class) ? "TEACHER + FORM MASTER" : "TEACHER");}const fmEl=document.getElementById("detail-t-form-master-class");if(fmEl)fmEl.value=d.formMasterClass||d.form_master_class||"";if(d.classes?.length){const sel=document.getElementById("detail-t-classes");if(sel)Array.from(sel.options).forEach(o=>o.selected=d.classes.includes(o.value));populateEditTeacherSubjects();}bindFormMasterClassRule();}
 };
 
 // Replace modal submit handlers with versions that preserve existing records and normalize Basic 7–9.
@@ -3391,39 +3534,33 @@ attachModalHandlers= function(){
     e.preventDefault();
     rememberTeacherDraft();
     const d=uiState.teacherDraft||{};
-    const classes=addTeacherClassesFromForm();
+    let classes=addTeacherClassesFromForm();
+    const teacherRoleChoice=String(document.getElementById("detail-t-role")?.value||"TEACHER").trim().toUpperCase();
+    const isFormMaster=teacherRoleChoice==="FORM MASTER" || teacherRoleChoice==="TEACHER + FORM MASTER";
+    const selectedFormMasterClass=String(document.getElementById("detail-t-form-master-class")?.value||"").trim();
+    if(isFormMaster){
+      if(!["Basic 7","Basic 8","Basic 9"].includes(selectedFormMasterClass)){showToast("Select the Form Master class: Basic 7, Basic 8, or Basic 9.");return;}
+      classes=[...new Set([...classes,selectedFormMasterClass])].filter(c=>c!=="Basic 7–9");
+    }
     if(!classes.length){showToast("Select a class or Basic 7–9.");return;}
     if(!enforceFormMasterClassRule(true)) return;
     const phone=(d.contact||"").trim();
     const username=(d.username||"").trim();
     const password=(d.password||"").trim();
     if(!username){showToast("Enter the teacher username.");return;}
-    const subjects={"Basic 7":[],"Basic 8":[],"Basic 9":[]};
-    const fmSelected=Array.from(document.getElementById("detail-t-classes")?.selectedOptions||[]).some(o=>o.value==="__FORM_MASTER__");
-    if(fmSelected){
-      const fmClass=document.querySelector('input[name="form-master-class"]:checked')?.value||"";
-      if(!["Basic 7","Basic 8","Basic 9"].includes(fmClass)){
-        showToast("Choose the Form Master class: Basic 7, Basic 8, or Basic 9.");
-        return;
-      }
-      subjects[fmClass]=["FORM MASTER"];
-    }else{
-      ["Basic 7","Basic 8","Basic 9"].forEach(c=>{
-        subjects[c]=Array.from(document.querySelectorAll(`[data-edit-basic-subject="${c}"]:checked`)).map(x=>x.value);
-      });
-    }
+    const subjects={};
+    ["Basic 7","Basic 8","Basic 9"].forEach(c=>subjects[c]=Array.from(document.querySelectorAll(`[data-edit-basic-subject="all"]:checked`)).map(x=>x.value));
+    if(isFormMaster){ subjects[selectedFormMasterClass]=[...new Set([...(subjects[selectedFormMasterClass]||[]),"FORM MASTER"])]; }
     const dob=d.dob||"";
     const photoFile=document.getElementById("detail-t-photo")?.files?.[0];
     if(photoFile){try{d.photoData=await fileToResizedDataUrl(photoFile,700,0.76);}catch(err){showToast("The teacher picture could not be prepared.");return;}}
-    const fmClass=fmSelected ? (document.querySelector('input[name="form-master-class"]:checked')?.value||"") : "";
-    const data={
-      name:d.name.trim(),username,password,contact:phone,dateOfBirth:dob,dob,
-      age:dob?calculateAgeFromDob(dob):"",appointmentDate:d.appointmentDate,
-      education:d.education.trim(),classes,subjects,photoData:d.photoData||"",
-      role:fmSelected?FORM_MASTER_ROLE:"",
-      teacherRole:fmSelected?FORM_MASTER_ROLE:"",
-      formMasterClass:fmClass
-    };
+    const existingTeacher=uiState.editingTeacher?DB.teachers.find(t=>t.id===uiState.editingTeacher):null;
+    const basicClasses=classes.filter(c=>["Basic 7","Basic 8","Basic 9"].includes(c));
+    const fmSelected=isFormMaster || Object.values(subjects).some(list=>Array.isArray(list)&&list.some(v=>String(v).trim().toUpperCase()==="FORM MASTER"));
+    const preservedFormMasterClass=(existingTeacher?.formMasterClass||existingTeacher?.form_master_class||"");
+    const inferredFormMasterClass=isFormMaster?selectedFormMasterClass:((preservedFormMasterClass&&basicClasses.includes(preservedFormMasterClass))?preservedFormMasterClass:(fmSelected&&basicClasses.length===1?basicClasses[0]:""));
+    const preservedRole=(existingTeacher?.teacherRole||existingTeacher?.role||"");
+    const data={name:d.name.trim(),username,password,contact:phone,dateOfBirth:dob,dob,age:dob?calculateAgeFromDob(dob):"",appointmentDate:d.appointmentDate,education:d.education.trim(),classes,subjects,formMasterClass:inferredFormMasterClass,form_master_class:inferredFormMasterClass,role:fmSelected?"FORM MASTER":(preservedRole||"TEACHER"),teacherRole:fmSelected?"FORM MASTER":(preservedRole||"TEACHER"),photoData:d.photoData||existingTeacher?.photoData||""};
     if(!supabaseClient || !authSession?.user){showToast("Please sign in as Admin while online to manage teacher accounts.");return;}
     const submitBtn=tf.querySelector('button[type="submit"]');
     if(submitBtn){submitBtn.disabled=true;submitBtn.textContent=uiState.editingTeacher?"Saving...":"Creating account...";}
@@ -3435,17 +3572,26 @@ attachModalHandlers= function(){
           const fnData=await invokeTeacherFunction({action:"update_password",auth_user_id:existing.authUserId,teacher_record_id:existing.id,username,password,phone,full_name:data.name});
           if(!fnData?.success) throw new Error(fnData?.error||"The teacher passcode could not be updated.");
         }
-        DB.teachers=DB.teachers.map(t=>t.id===existing.id?{...t,...data,password:password||t.password||"",authUserId:t.authUserId||"",authEmail:t.authEmail||teacherAuthEmail(username)}:t);
+        DB.teachers=DB.teachers.map(t=>t.id===existing.id?canonicalizeTeacherRecord({...t,...data,password:password||t.password||"",authUserId:t.authUserId||"",authEmail:t.authEmail||teacherAuthEmail(username)}):t);
         await saveKey("teachers",DB.teachers);
         showToast("Teacher information saved. Supabase Auth remains synchronized.");
       }else{
         if(!password){showToast("Enter the teacher passcode.");return;}
-        const teacherRecordId=uid("tch");
-        const fnData=await invokeTeacherFunction({username,phone,password,full_name:data.name,teacher_record_id:teacherRecordId});
+        // Reusing an existing username must update/merge that teacher instead of creating
+        // a second school_state row. This is the key protection for dual-role teachers.
+        const existingByUsername=(DB.teachers||[]).find(t=>String(t.username||"").trim().toLowerCase()===username.toLowerCase());
+        const teacherRecordId=existingByUsername?.id||uid("tch");
+        const fnData=await invokeTeacherFunction({username,phone,password,full_name:data.name,teacher_record_id:teacherRecordId,classes:data.classes,subjects:data.subjects,role:data.role,teacherRole:data.teacherRole,formMasterClass:data.formMasterClass,form_master_class:data.form_master_class});
         if(!fnData?.success || !fnData?.teacher?.authUserId) throw new Error(fnData?.error||"The teacher account could not be created.");
-        DB.teachers.push({...data,id:teacherRecordId,password:password,authUserId:fnData.teacher.authUserId,authEmail:fnData.teacher.authEmail||teacherAuthEmail(username)});
+        const mergedRecord=canonicalizeTeacherRecord({...existingByUsername,...data,id:teacherRecordId,password,authUserId:fnData.teacher.authUserId,authEmail:fnData.teacher.authEmail||teacherAuthEmail(username)});
+        if(existingByUsername){
+          DB.teachers=DB.teachers.map(t=>t.id===existingByUsername.id?mergedRecord:t);
+        }else{
+          DB.teachers.push(mergedRecord);
+        }
+        DB.teachers=mergeTeacherRecords(DB.teachers);
         await saveKey("teachers",DB.teachers);
-        showToast("Teacher account created and synchronized with Supabase Auth.");
+        showToast(existingByUsername?"Existing teacher account updated and merged with the new assignment.":"Teacher account created and synchronized with Supabase Auth.");
       }
     }catch(err){
       console.error("teacher account operation failed",err);
