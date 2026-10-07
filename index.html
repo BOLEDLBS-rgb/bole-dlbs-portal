@@ -467,7 +467,7 @@ function renderTeacherSubjects(teacher){
 }
 
 /* ============================= STATE ============================= */
-let DB = { students: [], teachers: [], attendance: {}, feeStructure: {}, feeRecords: {}, reports: {}, news: [], examApprovals: {}, books: [], onlineClasses: [], portalSettings: {} };
+let DB = { students: [], teachers: [], attendance: {}, feeStructure: {}, feeRecords: {}, reports: {}, news: [], examApprovals: {}, books: [], onlineClasses: [], portalSettings: {}, marks: {} };
 let session = null; // {role:'admin'|'teacher'|'student', ...}
 let view = "landing";
 let subview = "";
@@ -935,7 +935,7 @@ function renderLanding(){
       <button type="button" class="role-card" data-goto="login-teacher">
         <span class="num">02</span>
         <h3>Teacher</h3>
-        <p>Mark the class register, manage your class list, and fill terminal reports.</p>
+        <p>Mark the class register, manage your class list, and fill termly reports.</p>
       </button>
       <button type="button" class="role-card" data-goto="login-admin">
         <span class="num">03</span>
@@ -1028,7 +1028,7 @@ function renderStudentLogin(){
 /* ============================= APP SHELL ============================= */
 function navItemsFor(role){
   if(role==="admin") return [["overview","Overview"],["students","Classes & Students"],["attendance","Attendance"],["fees","Fees"],["reports","Report Cards"],["news","News & Announcements"]];
-  if(role==="teacher") return [["register","Class Register"],["reports","Terminal Reports"],["news","News & Announcements"]];
+  if(role==="teacher") return [["register","Class Register"],["reports","Termly Reports"],["news","News & Announcements"]];
   return [["register","My Register"],["fees","My Fees"],["reports","My Report Card"],["news","News & Announcements"]];
 }
 function roleLabel(role){ return role==="admin"?"Administrator":role==="teacher"?"Teacher":session.viewerType==="parent"?"Parent":"Student"; }
@@ -1515,7 +1515,7 @@ function reportEditorModal(){
   return `
   <div class="modal-bg" id="report-modal-bg">
     <div class="modal" style="max-width:640px;">
-      <h3>Terminal Report — ${esc(student?.name||"")} <span style="font-weight:400;font-size:14px;color:var(--text-soft);">(${term}, ${student?.class})</span></h3>
+      <h3>Termly Report — ${esc(student?.name||"")} <span style="font-weight:400;font-size:14px;color:var(--text-soft);">(${term}, ${student?.class})</span></h3>
       <div class="field"><label>Subjects &amp; scores</label>
         <div id="subjects-wrap">
           ${subjects.map((sub,i)=>`
@@ -1658,7 +1658,7 @@ function studentReport(){
       <div class="row" style="justify-content:space-between;align-items:flex-start;">
         <div>
           <div style="font-family:'Fraunces',serif;font-size:20px;color:var(--ink);">${SCHOOL_NAME}</div>
-          <div style="font-size:13px;color:var(--text-soft);">Terminal Report — ${term}</div>
+          <div style="font-size:13px;color:var(--text-soft);">Termly Report — ${term}</div>
           <div style="margin-top:10px;font-size:14px;"><b>${esc(s.name)}</b> &middot; ${s.class}</div>
           <div style="font-size:12.5px;color:var(--text-soft);">Position: ${esc(rep.position||"—")} &middot; ${esc(rep.attendanceSummary||"")}</div>
         </div>
@@ -2426,7 +2426,7 @@ function downloadReportPdf(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF(); addSchoolLogoToPdf(doc);
   doc.setFontSize(16); doc.text(SCHOOL_NAME, 14, 18);
-  doc.setFontSize(11); doc.text(`Terminal Report — ${term}`, 14, 26);
+  doc.setFontSize(11); doc.text(`Termly Report — ${term}`, 14, 26);
   doc.setFontSize(10); doc.text(`Name: ${s.name}    Class: ${s.class}`, 14, 34);
   doc.text(`Position: ${rep.position||"-"}    Attendance: ${rep.attendanceSummary||"-"}`, 14, 40);
   let y = 52;
@@ -2468,7 +2468,7 @@ renderLanding=function(){
       <button type="button" class="role-card" data-goto="login-teacher">
         <span class="num">02</span>
         <h3>Teacher</h3>
-        <p>Mark the class register, manage your class list, and fill terminal reports.</p>
+        <p>Mark the class register, manage your class list, and fill termly reports.</p>
       </button>
       <button type="button" class="role-card" data-goto="login-admin">
         <span class="num">03</span>
@@ -2706,7 +2706,7 @@ function teacherResources(){
 
 const _baseNavItemsFor = navItemsFor;
 navItemsFor = function(role){
-  if(role==="teacher") return [["register","Class Register"],["reports","Terminal Reports"],["resources","Online Class & Books"],["news","News & Announcements"]];
+  if(role==="teacher") return [["register","Class Register"],["reports","Termly Reports"],["resources","Online Class & Books"],["news","News & Announcements"]];
   if(role==="student") return [["register","My Register"],["fees","My Fees"],["resources","Books & Online Classes"],["reports","My Report Card"],["news","News & Announcements"]];
   return _baseNavItemsFor(role);
 };
@@ -3075,7 +3075,7 @@ function reportEditorModal(){
   if(!uiState.editingReport)return ""; const [sid,term]=uiState.editingReport.split("|"), student=getStudent(sid), existing=(DB.reports[sid]||{})[term];
   const draft=uiState.reportDraft||existing||{subjects:[{name:"",score:"",grade:"",remark:""}],conduct:"",interest:"",teacherRemark:"",headRemark:"",position:"",attendanceSummary:"",promotedTo:""};
   const subs=draft.subjects||[]; const next=nextClassFor(student?.class);
-  return `<div class="modal-bg" id="report-modal-bg"><div class="modal" style="max-width:680px;"><h3>Terminal Report — ${esc(student?.name||"")} <span style="font-size:14px;color:var(--text-soft);">(${esc(term)}, ${esc(student?.class||"")})</span></h3><div class="field"><label>Subjects &amp; scores</label><div id="subjects-wrap">${subs.map((sub,i)=>`<div class="subject-row"><input type="text" placeholder="Subject" value="${esc(sub.name)}" data-sub="${i}" data-field="name"><input type="number" placeholder="Score" value="${esc(sub.score)}" data-sub="${i}" data-field="score"><input type="text" placeholder="Grade" value="${esc(sub.grade)}" data-sub="${i}" data-field="grade"><input type="text" placeholder="Remark" value="${esc(sub.remark)}" data-sub="${i}" data-field="remark"><button type="button" class="btn btn-danger btn-sm" data-remove-subject="${i}">✕</button></div>`).join("")}</div><button type="button" class="btn btn-outline btn-sm" id="add-subject-btn">+ Add subject</button></div><div class="field"><label>Class position</label><input type="text" id="rep-position" value="${esc(draft.position||"")}"></div><div class="field"><label>Attendance summary</label><input type="text" id="rep-attendance" value="${esc(draft.attendanceSummary||"")}"></div><div class="field"><label>Promoted To</label><select id="rep-promoted-to"><option value="">Select next class</option>${next?`<option value="${next}" ${draft.promotedTo===next?"selected":""}>${next}</option>`:""}<option value="No promotion" ${draft.promotedTo==="No promotion"?"selected":""}>No promotion</option><option value="Graduated" ${draft.promotedTo==="Graduated"?"selected":""}>Graduated</option></select></div><div class="field"><label>Conduct</label><input type="text" id="rep-conduct" value="${esc(draft.conduct||"")}"></div><div class="field"><label>Interest / extracurricular</label><input type="text" id="rep-interest" value="${esc(draft.interest||"")}"></div><div class="field"><label>Teacher's remark</label><textarea id="rep-teacher-remark" rows="2">${esc(draft.teacherRemark||"")}</textarea></div><div class="field"><label>Head teacher's remark</label><textarea id="rep-head-remark" rows="2">${esc(draft.headRemark||"")}</textarea></div><div class="row" style="justify-content:flex-end;margin-top:14px;"><button class="btn btn-outline" id="cancel-report-btn">Cancel</button><button class="btn btn-primary" id="save-report-btn">Save report</button></div></div></div>`;
+  return `<div class="modal-bg" id="report-modal-bg"><div class="modal" style="max-width:680px;"><h3>Termly Report — ${esc(student?.name||"")} <span style="font-size:14px;color:var(--text-soft);">(${esc(term)}, ${esc(student?.class||"")})</span></h3><div class="field"><label>Subjects &amp; scores</label><div id="subjects-wrap">${subs.map((sub,i)=>`<div class="subject-row"><input type="text" placeholder="Subject" value="${esc(sub.name)}" data-sub="${i}" data-field="name"><input type="number" placeholder="Score" value="${esc(sub.score)}" data-sub="${i}" data-field="score"><input type="text" placeholder="Grade" value="${esc(sub.grade)}" data-sub="${i}" data-field="grade"><input type="text" placeholder="Remark" value="${esc(sub.remark)}" data-sub="${i}" data-field="remark"><button type="button" class="btn btn-danger btn-sm" data-remove-subject="${i}">✕</button></div>`).join("")}</div><button type="button" class="btn btn-outline btn-sm" id="add-subject-btn">+ Add subject</button></div><div class="field"><label>Class position</label><input type="text" id="rep-position" value="${esc(draft.position||"")}"></div><div class="field"><label>Attendance summary</label><input type="text" id="rep-attendance" value="${esc(draft.attendanceSummary||"")}"></div><div class="field"><label>Promoted To</label><select id="rep-promoted-to"><option value="">Select next class</option>${next?`<option value="${next}" ${draft.promotedTo===next?"selected":""}>${next}</option>`:""}<option value="No promotion" ${draft.promotedTo==="No promotion"?"selected":""}>No promotion</option><option value="Graduated" ${draft.promotedTo==="Graduated"?"selected":""}>Graduated</option></select></div><div class="field"><label>Conduct</label><input type="text" id="rep-conduct" value="${esc(draft.conduct||"")}"></div><div class="field"><label>Interest / extracurricular</label><input type="text" id="rep-interest" value="${esc(draft.interest||"")}"></div><div class="field"><label>Teacher's remark</label><textarea id="rep-teacher-remark" rows="2">${esc(draft.teacherRemark||"")}</textarea></div><div class="field"><label>Head teacher's remark</label><textarea id="rep-head-remark" rows="2">${esc(draft.headRemark||"")}</textarea></div><div class="row" style="justify-content:flex-end;margin-top:14px;"><button class="btn btn-outline" id="cancel-report-btn">Cancel</button><button class="btn btn-primary" id="save-report-btn">Save report</button></div></div></div>`;
 }
 
 function adminStudentsPanel(cls,list){
@@ -3272,7 +3272,7 @@ function downloadTeachersPdf(){
   doc.text("Security note: Username and password/passcode are intentionally excluded from this downloaded list.",14,202);
   doc.save(`teacher_list_${academicYear().replace("/","-")}.pdf`);
 }
-function downloadReportPdfForStudent(sid,term){ const s=getStudent(sid),rep=(DB.reports[sid]||{})[term]; if(!s||!rep)return; const {jsPDF}=window.jspdf; const doc=new jsPDF(); addSchoolLogoToPdf(doc);doc.setFontSize(16);doc.text(SCHOOL_NAME,14,18);doc.setFontSize(11);doc.text(`Terminal Report — ${term}`,14,26);doc.text(`Name: ${s.name}    Class: ${s.class}`,14,34);doc.text(`Promoted To: ${rep.promotedTo||"-"}`,14,40);let y=52;doc.text("Subject",14,y);doc.text("Score",90,y);doc.text("Grade",120,y);doc.text("Remark",145,y);y+=7;(rep.subjects||[]).forEach(sub=>{if(y>270){doc.addPage();y=20;}doc.text(String(sub.name||"").slice(0,25),14,y);doc.text(String(sub.score||""),90,y);doc.text(String(sub.grade||""),120,y);doc.text(String(sub.remark||"").slice(0,25),145,y);y+=7;});y+=7;doc.text(`Conduct: ${rep.conduct||"-"}`,14,y);y+=7;doc.text(`Interest: ${rep.interest||"-"}`,14,y);y+=7;doc.text(doc.splitTextToSize(`Teacher's remark: ${rep.teacherRemark||"-"}`,180),14,y);y+=14;doc.text(doc.splitTextToSize(`Head teacher's remark: ${rep.headRemark||"-"}`,180),14,y);doc.save(`${s.name.replace(/\s+/g,"_")}_${term.replace(/\s+/g,"_")}_report.pdf`); }
+function downloadReportPdfForStudent(sid,term){ const s=getStudent(sid),rep=(DB.reports[sid]||{})[term]; if(!s||!rep)return; const {jsPDF}=window.jspdf; const doc=new jsPDF(); addSchoolLogoToPdf(doc);doc.setFontSize(16);doc.text(SCHOOL_NAME,14,18);doc.setFontSize(11);doc.text(`Termly Report — ${term}`,14,26);doc.text(`Name: ${s.name}    Class: ${s.class}`,14,34);doc.text(`Promoted To: ${rep.promotedTo||"-"}`,14,40);let y=52;doc.text("Subject",14,y);doc.text("Score",90,y);doc.text("Grade",120,y);doc.text("Remark",145,y);y+=7;(rep.subjects||[]).forEach(sub=>{if(y>270){doc.addPage();y=20;}doc.text(String(sub.name||"").slice(0,25),14,y);doc.text(String(sub.score||""),90,y);doc.text(String(sub.grade||""),120,y);doc.text(String(sub.remark||"").slice(0,25),145,y);y+=7;});y+=7;doc.text(`Conduct: ${rep.conduct||"-"}`,14,y);y+=7;doc.text(`Interest: ${rep.interest||"-"}`,14,y);y+=7;doc.text(doc.splitTextToSize(`Teacher's remark: ${rep.teacherRemark||"-"}`,180),14,y);y+=14;doc.text(doc.splitTextToSize(`Head teacher's remark: ${rep.headRemark||"-"}`,180),14,y);doc.save(`${s.name.replace(/\s+/g,"_")}_${term.replace(/\s+/g,"_")}_report.pdf`); }
 
 async function transferStudentsToClass(fromClass,toClass){
   if(session?.role!=="teacher"||!teacherClasses().includes(fromClass)||!["Basic 7","Basic 8"].includes(fromClass)){showToast("Only Basic 7 and Basic 8 form masters can transfer students.");return;}
@@ -3303,7 +3303,7 @@ function downloadReceiptPdf(studentId,receiptId){ const s=getStudent(studentId),
 
 // Rebuild nav with Past Students and teacher progression controls.
 const _navFinal=navItemsFor;
-navItemsFor=function(role){ if(role==="admin")return [["overview","Overview"],["students","Classes & Students"],["attendance","Attendance"],["fees","Fees"],["reports","Report Cards"],["past-students","Past Students"],["news","News & Announcements"]]; if(role==="teacher")return [["register","Class Register"],["reports","Terminal Reports"],["resources","Online Class & Books"],["past-students","Past Students"],["news","News & Announcements"]]; return [["register","My Register"],["fees","My Fees"],["resources","Books & Online Classes"],["reports","My Report Card"],["past-students","Past Students"],["news","News & Announcements"]]; };
+navItemsFor=function(role){ if(role==="admin")return [["overview","Overview"],["students","Classes & Students"],["attendance","Attendance"],["fees","Fees"],["reports","Report Cards"],["past-students","Past Students"],["news","News & Announcements"]]; if(role==="teacher")return [["register","Class Register"],["reports","Termly Reports"],["resources","Online Class & Books"],["past-students","Past Students"],["news","News & Announcements"]]; return [["register","My Register"],["fees","My Fees"],["resources","Books & Online Classes"],["reports","My Report Card"],["past-students","Past Students"],["news","News & Announcements"]]; };
 const _renderSectionFinal=renderSection;
 renderSection=function(role,sv){ if(sv==="past-students")return pastStudentsView(); return _renderSectionFinal(role,sv); };
 const _sectionTitleFinal=sectionTitle;
@@ -3689,7 +3689,7 @@ function teacherOverview(){
   <div class="card"><h3>Teacher Overview</h3><p class="card-sub">Your assigned classes, subjects and today's attendance status.</p>
     ${rows.length?`<table><thead><tr><th>Class</th><th>Students</th><th>Assigned subject(s)</th><th>Today</th></tr></thead><tbody>${rows.map(r=>{let p=0,a=0,u=0;studentsInClass(r.cls).forEach(st=>{const v=(DB.attendance[r.cls]?.[today]||{})[st.id];if(v==='present')p++;else if(v==='absent')a++;else u++;});return `<tr><td><b>${esc(r.cls)}</b></td><td>${r.count}</td><td>${r.subjects.length?esc(r.subjects.join(', ')):'Class/Form duties'}</td><td>${p} present · ${a} absent · ${u} unmarked</td></tr>`}).join('')}</tbody></table>`:`<div class="empty"><b>No class assigned</b>Ask the administrator to assign a class.</div>`}
   </div>
-  <div class="card"><h3>Quick actions</h3><div class="row"><button class="btn btn-gold" data-teacher-quick="register">Open Class Register</button><button class="btn btn-outline" data-teacher-quick="marks">Enter Marks</button><button class="btn btn-outline" data-teacher-quick="reports">Terminal Reports</button></div></div>`;
+  <div class="card"><h3>Quick actions</h3><div class="row"><button class="btn btn-gold" data-teacher-quick="register">Open Class Register</button><button class="btn btn-outline" data-teacher-quick="marks">Enter Marks</button><button class="btn btn-outline" data-teacher-quick="reports">Termly Reports</button></div></div>`;
 }
 
 function teacherMarks(){
@@ -3733,7 +3733,7 @@ teacherRegister=function(){
 // Teacher navigation: include all core teacher tasks in one place.
 const _navBeforeLaunch=navItemsFor;
 navItemsFor=function(role){
-  if(role==='teacher') return [['overview','Overview'],['register','Class Register'],['marks','Marks & Results'],['reports','Terminal Reports'],['resources','Online Class & Books'],['past-students','Past Students'],['news','News & Announcements']];
+  if(role==='teacher') return [['overview','Overview'],['register','Class Register'],['marks','Marks & Results'],['reports','Termly Reports'],['resources','Online Class & Books'],['past-students','Past Students'],['news','News & Announcements']];
   return _navBeforeLaunch(role);
 };
 const _titleBeforeLaunch=sectionTitle;
@@ -3855,9 +3855,10 @@ function resizeImageToBlob(file,maxSize=900,quality=0.82){
     .filter(s => s && s !== FORM_MASTER_ROLE);
 
   function isFormMasterFor(cls){
+    const selectedRole=String(session?.selectedSubject||session?.activeSubject||session?.teacherRole||"").trim().toUpperCase();
     return session?.role==="teacher" &&
       Array.isArray(session.classes) && session.classes.includes(cls) &&
-      String(session.activeSubject||"").trim().toUpperCase()===FORM_MASTER_ROLE;
+      (selectedRole===FORM_MASTER_ROLE || String(session?.formMasterClass||"").trim()===String(cls).trim());
   }
 
   function studentAttendanceSummary(cls,sid){
@@ -4198,7 +4199,7 @@ function resizeImageToBlob(file,maxSize=900,quality=0.82){
   const _dlbsNavUpgrade=navItemsFor;
   navItemsFor=function(role){
     if(role==="admin") return [["overview","Overview"],["students","Classes & Students"],["attendance","Attendance"],["fees","Fees"],["marks-results","MARKS & RESULTS"],["reports","Report Cards"],["past-students","Past Students"],["news","News & Announcements"]];
-    if(role==="teacher") return [["register","Class Register"],["marks","Marks & Results"],["reports","Terminal Reports"],["resources","Online Class & Books"],["graduate-students","GRADUATE STUDENTS"],["news","News & Announcements"]];
+    if(role==="teacher") return [["register","Class Register"],["marks","Marks & Results"],["reports","Termly Reports"],["resources","Online Class & Books"],["graduate-students","GRADUATE STUDENTS"],["news","News & Announcements"]];
     return _dlbsNavUpgrade(role);
   };
 
@@ -4582,6 +4583,422 @@ function resizeImageToBlob(file,maxSize=900,quality=0.82){
   }
   loadPortalSettings();
   setTimeout(()=>{applyPortalBackground();if(typeof render==="function")render();},100);
+})();
+
+
+/* ===================== DLBS ASSESSMENT + TERMLY REPORT SYSTEM =====================
+   Basic 7, Basic 8 and Basic 9 only.
+   Assessment records are stored inside the existing synchronized `marks` school_state
+   object under __assessmentRecords, so the existing MARKS & RESULTS workspace remains
+   the raw exam-score area exactly as before while teachers/form masters can synchronize
+   continuous assessment data across devices.
+========================================================================= */
+(function(){
+  // The Form Master helper lives in the academic-workflow module above.
+  // Expose it safely here so the Assessment/Termly Report workspace does not
+  // fail when the teacher clicks either navigation item.
+  const isAssessmentFormMasterFor = cls => {
+    try {
+      return !!(window.DLBSAcademicUpgrade && typeof window.DLBSAcademicUpgrade.isFormMasterFor === "function"
+        && window.DLBSAcademicUpgrade.isFormMasterFor(cls));
+    } catch (e) {
+      return false;
+    }
+  };
+  const ASSESSMENT_KEY="__assessmentRecords";
+  const BASIC_CLASSES=["Basic 7","Basic 8","Basic 9"];
+  const COMPONENTS=[
+    ["individualTest","INDIVIDUAL TEST",15],
+    ["groupWork","GROUP WORK",15],
+    ["classTest","CLASS TEST",15],
+    ["project","PROJECT",15]
+  ];
+
+  function assessmentStore(){
+    if(!DB.marks || typeof DB.marks!=="object" || Array.isArray(DB.marks)) DB.marks={};
+    if(!DB.marks[ASSESSMENT_KEY] || typeof DB.marks[ASSESSMENT_KEY]!=="object") DB.marks[ASSESSMENT_KEY]={};
+    return DB.marks[ASSESSMENT_KEY];
+  }
+  function assessmentBucket(cls,term){
+    const st=assessmentStore();
+    st[cls]=st[cls]||{}; st[cls][term]=st[cls][term]||{};
+    return st[cls][term];
+  }
+  function assessmentFor(cls,term,subject){
+    return assessmentBucket(cls,term)[subject]||null;
+  }
+  function assessmentSubjectsForClass(cls){
+    const found=[];
+    (DB.teachers||[]).forEach(t=>{
+      const list=Array.isArray(t?.subjects?.[cls])?t.subjects[cls]:[];
+      list.forEach(sub=>{
+        const v=String(sub||"").trim();
+        if(!v || /form\s*master/i.test(v)) return;
+        if(!found.some(x=>x.toUpperCase()===v.toUpperCase())) found.push(v);
+      });
+    });
+    return found;
+  }
+  function teacherAssignedSubjects(cls){
+    return (session?.subjects?.[cls]||[]).filter(x=>x && !/form\s*master/i.test(String(x)));
+  }
+  function isBasicAssessmentClass(cls){ return BASIC_CLASSES.includes(cls); }
+  function clampScore(value,max){
+    if(value==="" || value===null || value===undefined) return null;
+    const n=Number(value); if(!Number.isFinite(n)) return null;
+    return Math.max(0,Math.min(max,n));
+  }
+  function assessmentTotals(row){
+    const a=clampScore(row?.individualTest,15), b=clampScore(row?.groupWork,15), c=clampScore(row?.classTest,15), d=clampScore(row?.project,15);
+    const e=clampScore(row?.examScore,100);
+    const total=[a,b,c,d].every(v=>v!==null)?a+b+c+d:null;
+    const class30=total===null?null:Number((total/60*30).toFixed(2));
+    const exam70=e===null?null:Number((e/100*70).toFixed(2));
+    const overall=(class30!==null && exam70!==null)?Number((class30+exam70).toFixed(2)):null;
+    return {total,class30,exam70,overall};
+  }
+  function gradeDetails(score){
+    const n=Number(score);
+    if(!Number.isFinite(n)) return {number:"",label:"",remark:""};
+    if(n>=80) return {number:1,label:"Excellent",remark:"Excellent"};
+    if(n>=70) return {number:2,label:"V. Good",remark:"Very Good"};
+    if(n>=64) return {number:3,label:"Good",remark:"Good"};
+    if(n>=58) return {number:4,label:"Good",remark:"Good"};
+    if(n>=51) return {number:5,label:"Credit",remark:"Credit"};
+    if(n>=43) return {number:6,label:"Fair",remark:"Fair"};
+    if(n>=36) return {number:7,label:"Pass",remark:"Pass"};
+    if(n>=30) return {number:8,label:"Weak pass",remark:"Weak Pass"};
+    return {number:9,label:"Fail",remark:"Fail"};
+  }
+  function subjectPosition(cls,term,subject,sid){
+    const list=studentsInClass(cls).map(st=>{
+      const r=assessmentFor(cls,term,subject)?.students?.[st.id];
+      return {id:st.id,score:assessmentTotals(r||{}).overall};
+    }).filter(x=>x.score!==null).sort((a,b)=>b.score-a.score);
+    const me=list.findIndex(x=>x.id===sid);
+    return me<0?"":(list.findIndex(x=>x.score===list[me]?.score)+1);
+  }
+  function classOverallPosition(cls,term,sid){
+    const subjects=assessmentSubjectsForClass(cls);
+    const rows=studentsInClass(cls).map(st=>{
+      let sum=0,count=0;
+      subjects.forEach(sub=>{const r=assessmentFor(cls,term,sub)?.students?.[st.id];const o=assessmentTotals(r||{}).overall;if(o!==null){sum+=o;count++;}});
+      return {id:st.id,score:count===subjects.length&&subjects.length?sum: null};
+    }).filter(x=>x.score!==null).sort((a,b)=>b.score-a.score);
+    const idx=rows.findIndex(x=>x.id===sid); if(idx<0)return "";
+    return rows.findIndex(x=>x.score===rows[idx].score)+1;
+  }
+  function attendanceSummaryFor(st){
+    const recs=Object.values(DB.attendance?.[st.class]||{});
+    let present=0,total=0;
+    recs.forEach(r=>{if(r && (r[st.id]==="present"||r[st.id]==="absent")){total++;if(r[st.id]==="present")present++;}});
+    return {present,total};
+  }
+  function allSubjectsSubmitted(cls,term){
+    const subjects=assessmentSubjectsForClass(cls), list=studentsInClass(cls);
+    if(!subjects.length || !list.length) return {ok:false,subjects,missing:subjects};
+    const missing=subjects.filter(sub=>{
+      const rec=assessmentFor(cls,term,sub);
+      if(!rec?.submitted) return true;
+      return list.some(st=>{
+        const r=rec.students?.[st.id];
+        const totals=assessmentTotals(r||{});
+        return totals.total===null || totals.exam70===null;
+      });
+    });
+    return {ok:missing.length===0,subjects,missing};
+  }
+  async function saveAssessmentData(){ await saveKey("marks",DB.marks); }
+
+  function assessmentRecordView(){
+    const cls=teacherActiveClass();
+    if(!isBasicAssessmentClass(cls)) return `<div class="card"><h3>ASSESSMENT RECORD</h3><div class="empty"><b>Basic 7, Basic 8 and Basic 9 only</b>This assessment workspace is available for teachers assigned to Basic 7, Basic 8 or Basic 9.</div></div>`;
+    const term=uiState.assessmentTerm||TERMS[0];
+    const assigned=teacherAssignedSubjects(cls);
+    const subject=uiState.assessmentSubject && assigned.includes(uiState.assessmentSubject)?uiState.assessmentSubject:assigned[0];
+    if(!subject) return `<div class="card"><h3>ASSESSMENT RECORD</h3><div class="empty"><b>No subject assigned</b>The administrator has not assigned a subject to you for ${esc(cls)}.</div></div>`;
+    const rec=assessmentFor(cls,term,subject);
+    const list=studentsInClass(cls);
+    const submitted=!!rec?.submitted;
+    const rowFor=sid=>rec?.students?.[sid]||{};
+    return `<div class="card assessment-card">
+      <div class="assessment-head">
+        <div><h3>ASSESSMENT RECORD</h3><p class="card-sub">${esc(cls)} · ${esc(term)} · Subject: <b>${esc(subject)}</b></p></div>
+        <span class="badge ${submitted?'badge-approved':'badge-pending'}">${submitted?'SUBMITTED TO FORM MASTER':'NOT SUBMITTED'}</span>
+      </div>
+      <div class="row assessment-controls">
+        <select id="assessment-class">${teacherClasses().filter(isBasicAssessmentClass).map(c=>`<option value="${esc(c)}" ${c===cls?'selected':''}>${esc(c)}</option>`).join('')}</select>
+        <select id="assessment-subject">${assigned.map(s=>`<option value="${esc(s)}" ${s===subject?'selected':''}>${esc(s)}</option>`).join('')}</select>
+        <select id="assessment-term">${TERMS.map(t=>`<option value="${esc(t)}" ${t===term?'selected':''}>${esc(t)}</option>`).join('')}</select>
+      </div>
+      <p class="help-note">Enter only 0–15 for the four class-assessment components and 0–100 for the End of Term Exam. The totals and 30%/70% scaling are automatic.</p>
+      <div class="ledger"><table class="assessment-table"><thead><tr><th>Student</th><th>Individual Test<br>/15</th><th>Group Work<br>/15</th><th>Class Test<br>/15</th><th>Project<br>/15</th><th>Total<br>/60</th><th>Class Score<br>30%</th><th>End of Term Exam<br>/100</th><th>Exam<br>70%</th><th>Overall Total<br>/100</th></tr></thead><tbody>
+      ${list.map(st=>{const r=rowFor(st.id),t=assessmentTotals(r);return `<tr><td><b>${esc(st.name)}</b></td>
+        ${COMPONENTS.map(([key])=>`<td><input class="assessment-input" data-assessment-student="${esc(st.id)}" data-assessment-field="${key}" type="number" min="0" max="15" step="0.01" value="${r[key]??''}" ${submitted?'disabled':''}></td>`).join('')}
+        <td data-assessment-total="${esc(st.id)}">${t.total??'—'}</td><td data-assessment-class30="${esc(st.id)}">${t.class30??'—'}</td>
+        <td><input class="assessment-input" data-assessment-student="${esc(st.id)}" data-assessment-field="examScore" type="number" min="0" max="100" step="0.01" value="${r.examScore??''}" ${submitted?'disabled':''}></td>
+        <td data-assessment-exam70="${esc(st.id)}">${t.exam70??'—'}</td><td data-assessment-overall="${esc(st.id)}">${t.overall??'—'}</td></tr>`}).join('')}
+      </tbody></table></div>
+      <div class="row" style="justify-content:flex-end;margin-top:14px;">
+        ${submitted?`<span class="help-note" style="margin-right:auto;">This subject has been submitted. If a correction is needed, ask the Form Master/Admin.</span>`:`<button class="btn btn-gold" id="assessment-save-submit">SAVE &amp; SUBMIT TO FORM MASTER</button>`}
+      </div>
+    </div>`;
+  }
+
+  function formMasterReportWorkspace(){
+    const cls=teacherActiveClass(), term=uiState.assessmentTerm||TERMS[0];
+    if(!isBasicAssessmentClass(cls) || !isAssessmentFormMasterFor(cls)) return assessmentRecordView();
+    const status=allSubjectsSubmitted(cls,term), list=studentsInClass(cls);
+    const reports=list.map(s=>(DB.reports[s.id]||{})[term]).filter(r=>r?.generatedFromAssessments);
+    return `<div class="card"><div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;">
+      <div><h3>TERMLY REPORT GENERATION — ${esc(cls)}</h3><p class="card-sub">${esc(term)} · Form Master workspace</p></div>
+      <span class="badge ${status.ok?'badge-approved':'badge-partial'}">${status.ok?'ALL SUBJECTS SUBMITTED':'WAITING FOR SUBJECTS'}</span>
+    </div>
+    <div class="row" style="margin:12px 0 16px;"><select id="assessment-fm-term">${TERMS.map(t=>`<option value="${esc(t)}" ${t===term?'selected':''}>${esc(t)}</option>`).join('')}</select>
+    <button class="btn btn-gold" id="auto-generate-termly-report" ${status.ok?'':'disabled'}>AUTO GENERATE TERMLY REPORT</button></div>
+    ${status.ok?`<div class="payment-lock-open"><b>Ready for generation.</b> All assigned Basic 7–9 subjects have submitted complete assessment and exam scores for ${esc(cls)}.</div>`:`<div class="payment-lock-closed"><b>Not ready yet.</b><div style="margin-top:5px;">Waiting for: ${esc(status.missing.join(', ')||'subject submissions')}.</div></div>`}
+    <div style="margin-top:18px;"><h4 style="font-family:'Fraunces',serif;color:var(--ink);">Subject submission status</h4>
+      <table><thead><tr><th>Subject</th><th>Submitted</th><th>Submitted by</th></tr></thead><tbody>${status.subjects.map(sub=>{const r=assessmentFor(cls,term,sub);return `<tr><td>${esc(sub)}</td><td>${r?.submitted?'<span class="badge badge-approved">YES</span>':'<span class="badge badge-pending">NO</span>'}</td><td>${esc(r?.submittedByName||'—')}</td></tr>`}).join('')}</tbody></table>
+    </div>
+    ${reports.length?`<div class="card" style="margin-top:18px;background:var(--paper);"><h3>Generated reports</h3><p class="card-sub">These reports are now waiting for Admin review and approval.</p><table><thead><tr><th>Student</th><th>Status</th></tr></thead><tbody>${list.map(s=>{const r=(DB.reports[s.id]||{})[term];return `<tr><td>${esc(s.name)}</td><td>${r?.approved?'<span class="badge badge-approved">ADMIN APPROVED</span>':r?.generatedFromAssessments?'<span class="badge badge-partial">AWAITING ADMIN APPROVAL</span>':'<span class="badge badge-pending">NOT GENERATED</span>'}</td></tr>`}).join('')}</tbody></table></div>`:''}
+    </div>`;
+  }
+
+  function teacherTermlyReports(){
+    const cls=teacherActiveClass();
+    if(!isBasicAssessmentClass(cls)) return `<div class="card"><h3>TERMLY REPORTS</h3><div class="empty"><b>Basic 7, Basic 8 and Basic 9</b>Auto-generated termly reports are available for these classes.</div></div>`;
+    const term=uiState.teachReportTerm||TERMS[0], list=studentsInClass(cls);
+    const formMaster=isAssessmentFormMasterFor(cls);
+    return `<div class="card"><div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;"><div><h3>TERMLY REPORTS</h3><p class="card-sub">${esc(cls)} · ${esc(term)}</p></div>${formMaster?'<span class="badge badge-approved">FORM MASTER</span>':''}</div>
+      <div class="row" style="margin-bottom:16px;"><select id="teach-report-class">${teacherClasses().map(c=>`<option value="${esc(c)}" ${c===cls?'selected':''}>${esc(sessionClassLabel(c))}</option>`).join('')}</select><select id="teach-report-term">${TERMS.map(t=>`<option value="${esc(t)}" ${t===term?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
+      ${formMaster?`<div class="payment-lock-open" style="margin-bottom:14px;"><b>Form Master action:</b> Use ASSESSMENT RECORD to wait for all subject submissions and auto-generate the class reports.</div>`:''}
+      <table><thead><tr><th>Student</th><th>Report status</th><th>Class position</th><th>Action</th></tr></thead><tbody>${list.map(s=>{const rep=(DB.reports[s.id]||{})[term];const visible=!!rep?.approved;return `<tr><td>${esc(s.name)}</td><td>${!rep?'<span class="badge badge-pending">NOT GENERATED</span>':visible?'<span class="badge badge-approved">APPROVED &amp; VISIBLE</span>':'<span class="badge badge-partial">AWAITING ADMIN APPROVAL</span>'}</td><td>${esc(rep?.position||'—')}</td><td>${visible?`<button class="btn btn-gold btn-sm" data-download-report="${s.id}|${term}">Download TERMLY REPORT</button>`:'<span class="help-note">Hidden until Admin approval</span>'}</td></tr>`}).join('')}</tbody></table>
+    </div>`;
+  }
+
+  function termlyReportForStudent(){
+    const s=session.student;
+    const terms=TERMS.filter(t=>(DB.reports[s.id]||{})[t]?.approved);
+    const term=uiState.studentReportTerm&&terms.includes(uiState.studentReportTerm)?uiState.studentReportTerm:terms[0];
+    const rep=term?(DB.reports[s.id]||{})[term]:null;
+    if(!rep) return `<div class="card"><h3>MY TERMLY REPORT</h3><div class="empty"><b>No approved termly report available</b>The Form Master must generate the report and the Admin must approve it before it becomes visible here.</div></div>`;
+    return `<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:16px;"><select id="student-report-term">${terms.map(t=>`<option value="${esc(t)}" ${t===term?'selected':''}>${esc(t)}</option>`).join('')}</select><button class="btn btn-gold btn-sm" id="download-report-btn">Download TERMLY REPORT</button></div>
+      <div class="termly-preview"><div class="termly-watermark"><img src="${SCHOOL_LOGO}" alt=""></div><div class="termly-school-head"><img src="${SCHOOL_LOGO}" alt="School logo"><div><div class="termly-school-name">DEEPER LIFE BASIC SCHOOL</div><div class="termly-title">TERMLY REPORT SHEET</div></div></div>
+      ${termlyPreviewHtml(s,rep,term)}</div></div>`;
+  }
+
+  function termlyPreviewHtml(s,rep,term){
+    const rows=rep.subjects||[];
+    const att=rep.attendance||{present:0,total:0};
+    return `<div class="termly-meta"><div>Name: <b>${esc(s.name)}</b></div><div>Class: <b>${esc(s.class)}</b> &nbsp; Term: <b>${esc(term)}</b></div><div>No. on Roll: <b>${esc(rep.noOnRoll||studentsInClass(s.class).length)}</b> &nbsp; Position: <b>${esc(rep.position||'—')}</b></div><div>Promoted to/Repeated in: <b>${esc(rep.promotedTo||'—')}</b></div></div>
+      <table class="termly-table"><thead><tr><th>SUBJECT</th><th>CLASS<br>SCORE<br>30%</th><th>EXAMS<br>SCORE<br>70%</th><th>TOTAL<br>SCORE<br>100%</th><th>POSITION<br>IN CLASS</th><th>GRADE</th><th>REMARKS</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.classScore30??'—')}</td><td>${esc(r.examScore70??'—')}</td><td>${esc(r.overallTotal??'—')}</td><td>${esc(r.positionInClass??'—')}</td><td>${esc(r.grade||'—')}</td><td>${esc(r.remark||'—')}</td></tr>`).join('')}</tbody></table>
+      <div class="termly-summary"><span>Total Score: <b>${esc(rep.totalScore??'—')}</b></span><span>Out of: <b>${esc(rep.outOf??'—')}</b></span><span>Arrears: <b>${esc(rep.arrears??'—')}</b></span><span>Attendance: <b>${att.present}</b> Out of <b>${att.total}</b></span><span>Next Term Fees: <b>${esc(rep.nextTermFees||'—')}</b></span></div>
+      <div class="termly-lines"><div>Conduct: <b>${esc(rep.conduct||'—')}</b></div><div>Interest: <b>${esc(rep.interest||'—')}</b></div><div>Class teacher's Remarks: <b>${esc(rep.teacherRemark||'—')}</b></div><div>Head teacher's remarks: <b>${esc(rep.headRemark||'—')}</b></div><div>Head teacher's Signature: __________________________ Date: __________________</div></div>
+      <div class="grade-key"><span>80–100&nbsp; 1 Excellent</span><span>70–79&nbsp; 2 V. Good</span><span>64–69&nbsp; 3 Good</span><span>58–63&nbsp; 4 Good</span><span>51–57&nbsp; 5 Credit</span><span>43–50&nbsp; 6 Fair</span><span>36–42&nbsp; 7 Pass</span><span>30–35&nbsp; 8 Weak pass</span><span>0–29&nbsp; 9 Fail</span></div>`;
+  }
+
+  function buildGeneratedReport(st,cls,term){
+    const subjects=assessmentSubjectsForClass(cls);
+    const subjectRows=subjects.map(sub=>{
+      const ar=assessmentFor(cls,term,sub)?.students?.[st.id]||{};
+      const t=assessmentTotals(ar);
+      const gd=gradeDetails(t.overall);
+      return {name:sub,classScore30:t.class30,examScore70:t.exam70,overallTotal:t.overall,positionInClass:subjectPosition(cls,term,sub,st.id),grade:gd.number?`${gd.number} ${gd.label}`:"",remark:gd.remark};
+    });
+    const total=subjectRows.every(r=>r.overallTotal!==null)?Number(subjectRows.reduce((a,r)=>a+Number(r.overallTotal||0),0).toFixed(2)):null;
+    const outOf=subjects.length*100;
+    const att=attendanceSummaryFor(st);
+    const pos=classOverallPosition(cls,term,st.id);
+    return {studentId:st.id,class:cls,term,generatedFromAssessments:true,generatedDate:todayISO(),approved:false,subjects:subjectRows,totalScore:total,outOf,position:pos?String(pos):"",noOnRoll:studentsInClass(cls).length,attendance:att,attendanceSummary:`${att.present} out of ${att.total}`,arrears:feeBalance(st.id).balance,nextTermFees:"",promotedTo:nextClassFor(cls)||"",conduct:"",interest:"",teacherRemark:"",headRemark:""};
+  }
+
+  async function generateTermlyReports(cls,term){
+    if(session?.role!=="teacher" || !isAssessmentFormMasterFor(cls)){showToast("Only the Form Master can generate the termly reports.");return;}
+    const status=allSubjectsSubmitted(cls,term);
+    if(!status.ok){showToast(`Reports cannot be generated yet. Waiting for: ${status.missing.join(', ')}.`);return;}
+    const list=studentsInClass(cls); if(!list.length){showToast("There are no students in this class.");return;}
+    DB.reports=DB.reports||{};
+    list.forEach(st=>{DB.reports[st.id]=DB.reports[st.id]||{};const old=DB.reports[st.id][term]||{};DB.reports[st.id][term]={...buildGeneratedReport(st,cls,term),teacherRemark:old.teacherRemark||"",headRemark:old.headRemark||"",conduct:old.conduct||"",interest:old.interest||"",promotedTo:old.promotedTo||nextClassFor(cls)||"",approved:false,generatedDate:todayISO()};});
+    await saveKey("reports",DB.reports);
+    showToast(`TERMLY reports generated for ${cls} and sent to Admin for approval.`);
+    render();
+  }
+
+  function drawTermlyReportPdf(sid,term){
+    const s=getStudent(sid),rep=(DB.reports[sid]||{})[term];
+    if(!s||!rep?.approved){showToast("This TERMLY REPORT is not approved yet.");return;}
+    const {jsPDF}=window.jspdf, doc=new jsPDF({unit:"mm",format:"a4"});
+    const W=210,H=297;
+    const burg=[102,39,52], pale=[229,222,180], blue=[214,227,239], border=[35,43,63];
+    doc.setDrawColor(...border);doc.setLineWidth(0.7);doc.rect(8,8,W-16,H-16);
+    try{ if(doc.GState){doc.saveGraphicsState();doc.setGState(new doc.GState({opacity:0.075}));doc.addImage(SCHOOL_LOGO,"JPEG",62,92,86,86);doc.restoreGraphicsState();}else{doc.addImage(SCHOOL_LOGO,"JPEG",62,92,86,86);} }catch(e){}
+    try{doc.addImage(SCHOOL_LOGO,"JPEG",25,17,24,24);}catch(e){}
+    doc.setTextColor(...burg);doc.setFont("helvetica","bold");doc.setFontSize(15);doc.text("DEEPER LIFE BASIC SCHOOL",105,24,{align:"center"});
+    doc.setFontSize(16);doc.text("TERMLY REPORT SHEET",105,32,{align:"center"});
+    doc.setFont("helvetica","normal");doc.setFontSize(9.5);
+    const metaY=43; const meta=[
+      [`Name: ${s.name}`,`Term: ${term}`,`Next term Re-opens: ${rep.nextTermReopens||"—"}`],
+      [`CLASS: ${s.class}`,`No. on Roll: ${rep.noOnRoll||studentsInClass(s.class).length}`,`Position: ${rep.position||"—"}`],
+      [`Promoted to/Repeated in: ${rep.promotedTo||"—"}`,``,``]
+    ];
+    meta.forEach((row,i)=>{let x=23;row.forEach((v,j)=>{if(!v)return;doc.text(v,x,metaY+i*8);x += j===0?62:j===1?55:0;});});
+    const x0=23,y0=67; const widths=[39,22,22,22,24,19,39]; const headers=[["SUBJECT"],["CLASS","SCORE","30%"],["EXAMS","SCORE","70%"],["TOTAL","SCORE","100%"],["POSITION","IN CLASS"],["GRADE"],["REMARKS"]];
+    let x=x0; headers.forEach((h,i)=>{doc.setFillColor(...pale);doc.setDrawColor(...border);doc.rect(x,y0,widths[i],18,"FD");doc.setTextColor(...burg);doc.setFont("helvetica","bold");doc.setFontSize(7.2);h.forEach((t,k)=>doc.text(t,x+widths[i]/2,y0+6+k*4,{align:"center"}));x+=widths[i];});
+    let y=y0+18;doc.setFont("helvetica","normal");doc.setFontSize(7.2);(rep.subjects||[]).forEach((r,idx)=>{x=x0;const vals=[r.name,r.classScore30,r.examScore70,r.overallTotal,r.positionInClass,r.grade,r.remark];vals.forEach((v,i)=>{doc.setFillColor(...blue);doc.setDrawColor(...border);doc.rect(x,y,widths[i],8,"FD");doc.setTextColor(...burg);let txt=String(v??"—");if(i===0)txt=txt.slice(0,23);if(i===6)txt=txt.slice(0,22);doc.text(txt,x+widths[i]/2,y+5,{align:"center"});x+=widths[i];});y+=8;});
+    while(y<155){x=x0;for(let i=0;i<widths.length;i++){doc.setFillColor(...blue);doc.setDrawColor(...border);doc.rect(x,y,widths[i],8,"FD");x+=widths[i];}y+=8;}
+    y+=7;doc.setFontSize(8.2);doc.setFont("helvetica","bold");doc.setTextColor(...burg);doc.text(`Total Score: ${rep.totalScore??"—"}        Out of: ${rep.outOf??"—"}`,23,y);doc.text(`Arrears: ${rep.arrears??"—"}        Next Term Fees: ${rep.nextTermFees||"—"}`,112,y);
+    y+=9;doc.setFont("helvetica","normal");doc.text(`Attendance: ${rep.attendance?.present??0}        Out of: ${rep.attendance?.total??0}`,23,y);
+    y+=10;doc.text(`Conduct: ${rep.conduct||"—"}`,23,y);y+=9;doc.text(`Interest: ${rep.interest||"—"}`,23,y);y+=9;
+    const wrap=(label,val)=>{const lines=doc.splitTextToSize(`${label}: ${val||"—"}`,164);doc.text(lines,23,y);y+=Math.max(9,lines.length*4.5);};
+    wrap("Class teacher's Remarks",rep.teacherRemark);wrap("Head teacher's remarks",rep.headRemark);
+    y+=3;doc.text("Head teacher's Signature: _____________________________    Date: __________________",23,y);
+    y=244;doc.setDrawColor(...border);doc.rect(23,y,164,31);doc.setFontSize(7.2);doc.setFont("helvetica","normal");
+    const key=["80–100  1 Excellent","70–79  2 V. Good","64–69  3 Good","58–63  4 Good","51–57  5 Credit","43–50  6 Fair","36–42  7 Pass","30–35  8 Weak pass","0–29  9 Fail"];key.forEach((v,i)=>{const col=i<3?0:i<6?1:2,row=i%3;doc.text(v,28+col*53,y+7+row*7);});
+    doc.save(`${s.name.replace(/\s+/g,"_")}_${term.replace(/\s+/g,"_")}_Termly_Report.pdf`);
+  }
+
+  // Make the portal terminology consistent everywhere visible.
+  const style=document.createElement("style");style.textContent=`
+    .assessment-card{border-top:4px solid var(--gold)}
+    .assessment-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:12px}
+    .assessment-controls{margin-bottom:12px}
+    .assessment-table{min-width:1320px;font-size:12px}
+    .assessment-table th{text-align:center;vertical-align:middle;line-height:1.25}
+    .assessment-table td{text-align:center}
+    .assessment-table td:first-child,.assessment-table th:first-child{text-align:left;min-width:190px}
+    .assessment-input{width:82px;min-width:72px;padding:7px 6px!important;text-align:center}
+    .termly-preview{position:relative;background:#fff;border:1px solid var(--line-strong);padding:22px;overflow:hidden}
+    .termly-watermark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:.08}
+    .termly-watermark img{width:360px;max-width:70%;object-fit:contain}
+    .termly-school-head{position:relative;display:flex;align-items:center;justify-content:center;gap:14px;color:#6b2737;text-align:center}
+    .termly-school-head img{width:70px;height:70px;object-fit:contain}
+    .termly-school-name{font-family:'Fraunces',serif;font-size:22px;font-weight:700}
+    .termly-title{font-family:'Fraunces',serif;font-size:19px;font-weight:700;text-decoration:underline}
+    .termly-meta{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:7px 20px;margin:18px 0;color:#6b2737;font-size:13px}
+    .termly-table{position:relative;min-width:760px;border-collapse:collapse;color:#6b2737}
+    .termly-table th{background:#e5deb4;text-align:center;font-size:10px;padding:8px 5px;border:1px solid #4b5360}
+    .termly-table td{background:rgba(214,227,239,.88);text-align:center;padding:7px 5px;border:1px solid #4b5360;font-size:11px}
+    .termly-table td:first-child{text-align:left;font-weight:600}
+    .termly-summary{position:relative;display:flex;flex-wrap:wrap;gap:18px;margin-top:16px;color:#6b2737;font-size:12.5px}
+    .termly-lines{position:relative;color:#6b2737;font-size:13px;line-height:2;margin-top:12px}
+    .grade-key{position:relative;border:1px solid #4b5360;padding:8px;display:grid;grid-template-columns:repeat(3,1fr);gap:4px;color:#6b2737;font-size:10px;margin-top:14px}
+    @media(max-width:700px){.assessment-head{flex-direction:column}.termly-meta{grid-template-columns:1fr}.termly-school-name{font-size:17px}.termly-title{font-size:15px}.grade-key{grid-template-columns:1fr}.assessment-table{min-width:1250px}}
+  `;document.head.appendChild(style);
+
+  // Add the requested workspace to teacher navigation while preserving all existing items.
+  const _arNav=navItemsFor;
+  navItemsFor=function(role){
+    const items=_arNav(role);
+    if(role!=="teacher") return items;
+    const cleaned=items.filter(x=>x[0]!=="assessment-record");
+    const idx=cleaned.findIndex(x=>x[0]==="marks");
+    const item=["assessment-record","ASSESSMENT RECORD"];
+    cleaned.splice(idx<0?2:idx+1,0,item);
+    return cleaned;
+  };
+  const _arTitle=sectionTitle;
+  sectionTitle=function(role,sv){if(role==="teacher"&&sv==="assessment-record")return "ASSESSMENT RECORD";return _arTitle(role,sv);};
+  const _arSection=renderSection;
+  renderSection=function(role,sv){
+    if(role==="teacher"&&sv==="assessment-record") return isAssessmentFormMasterFor(teacherActiveClass()) ? (formMasterReportWorkspace() + (teacherAssignedSubjects(teacherActiveClass()).length ? assessmentRecordView() : "")) : assessmentRecordView();
+    if(role==="teacher"&&sv==="reports") return teacherTermlyReports();
+    if(role==="student"&&sv==="reports") return termlyReportForStudent();
+    return _arSection(role,sv);
+  };
+
+  // Subject-teacher assessment handlers.
+  const _arAttach=attachHandlers;
+  attachHandlers=function(){
+    _arAttach();
+    const ac=document.getElementById("assessment-class");if(ac)ac.onchange=()=>{session.activeClass=ac.value;uiState.assessmentSubject=null;render();};
+    const as=document.getElementById("assessment-subject");if(as)as.onchange=()=>{uiState.assessmentSubject=as.value;render();};
+    const at=document.getElementById("assessment-term");if(at)at.onchange=()=>{uiState.assessmentTerm=at.value;render();};
+    const aft=document.getElementById("assessment-fm-term");if(aft)aft.onchange=()=>{uiState.assessmentTerm=aft.value;render();};
+    const trc=document.getElementById("teach-report-class");if(trc)trc.onchange=()=>{session.activeClass=trc.value;render();};
+    const trt=document.getElementById("teach-report-term");if(trt)trt.onchange=()=>{uiState.teachReportTerm=trt.value;render();};
+    const srt=document.getElementById("student-report-term");if(srt)srt.onchange=()=>{uiState.studentReportTerm=srt.value;render();};
+    const dl=document.getElementById("download-report-btn");if(dl)dl.onclick=()=>{const term=uiState.studentReportTerm||TERMS.find(t=>(DB.reports[session.student.id]||{})[t]?.approved);drawTermlyReportPdf(session.student.id,term);};
+    const gen=document.getElementById("auto-generate-termly-report");if(gen)gen.onclick=()=>generateTermlyReports(teacherActiveClass(),uiState.assessmentTerm||TERMS[0]);
+    document.querySelectorAll("[data-download-report]").forEach(el=>el.onclick=()=>{const [sid,term]=el.dataset.downloadReport.split("|");if(DB.reports[sid]?.[term]?.approved)drawTermlyReportPdf(sid,term);else showToast("This TERMLY REPORT is still awaiting Admin approval.");});
+    const inputs=[...document.querySelectorAll(".assessment-input")];
+    function preview(){
+      const rows={};inputs.forEach(el=>{const sid=el.dataset.assessmentStudent;rows[sid]=rows[sid]||{};rows[sid][el.dataset.assessmentField]=el.value;});
+      Object.entries(rows).forEach(([sid,r])=>{const t=assessmentTotals(r);const set=(a,v)=>{const e=document.querySelector(`[data-assessment-${a}="${sid}"]`);if(e)e.textContent=v??"—";};set("total",t.total);set("class30",t.class30);set("exam70",t.exam70);set("overall",t.overall);});
+    }
+    inputs.forEach(el=>el.oninput=preview);
+    const save=document.getElementById("assessment-save-submit");if(save)save.onclick=async()=>{
+      const cls=teacherActiveClass(),term=document.getElementById("assessment-term")?.value||TERMS[0],subject=document.getElementById("assessment-subject")?.value;
+      if(!isBasicAssessmentClass(cls)||!teacherAssignedSubjects(cls).includes(subject)){showToast("You can only submit an assessment for your assigned subject in Basic 7, Basic 8 or Basic 9.");return;}
+      const list=studentsInClass(cls);const rec=assessmentFor(cls,term,subject)||{students:{}};rec.students=rec.students||{};
+      let invalid=false;
+      list.forEach(st=>{const r={};document.querySelectorAll(`.assessment-input[data-assessment-student="${st.id}"]`).forEach(el=>r[el.dataset.assessmentField]=el.value.trim());const a=assessmentTotals(r);if(a.total===null||a.exam70===null)invalid=true;const raw=["individualTest","groupWork","classTest","project"].map(k=>r[k]===""?null:Number(r[k]));if(raw.some(v=>v===null||!Number.isFinite(v)||v<0||v>15)||r.examScore===""||!Number.isFinite(Number(r.examScore))||Number(r.examScore)<0||Number(r.examScore)>100)invalid=true;rec.students[st.id]=r;});
+      if(invalid){showToast("Complete every student and keep the class-work scores between 0–15 and the exam between 0–100.");return;}
+      rec.submitted=true;rec.submittedAt=new Date().toISOString();rec.submittedBy=session?.teacherId||"";rec.submittedByName=session?.displayName||"";rec.className=cls;rec.term=term;rec.subject=subject;
+      assessmentBucket(cls,term)[subject]=rec;
+      await saveAssessmentData();
+      showToast(`${subject} assessment submitted to the ${cls} Form Master.`);render();
+    };
+  };
+
+  // Prevent subject teachers from opening/filling the old manual report editor.
+  const _arReportEditor=reportEditorModal;
+  reportEditorModal=function(){
+    if(!uiState.editingReport) return "";
+    const [sid,term]=uiState.editingReport.split("|"),rep=(DB.reports[sid]||{})[term],s=getStudent(sid);
+    if(!rep?.generatedFromAssessments) return _arReportEditor();
+    const next=nextClassFor(s?.class);
+    return `<div class="modal-bg" id="report-modal-bg"><div class="modal" style="max-width:760px;"><h3>Review TERMLY REPORT — ${esc(s?.name||"")} <span style="font-size:14px;color:var(--text-soft);">(${esc(term||"")}, ${esc(s?.class||"")})</span></h3><p class="card-sub">Marks, scaled scores, grades and positions were generated automatically from the submitted ASSESSMENT RECORD. They are locked against manual editing.</p><div class="ledger"><table><thead><tr><th>Subject</th><th>Class 30%</th><th>Exam 70%</th><th>Overall 100%</th><th>Position</th><th>Grade</th></tr></thead><tbody>${(rep.subjects||[]).map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.classScore30??'—')}</td><td>${esc(r.examScore70??'—')}</td><td>${esc(r.overallTotal??'—')}</td><td>${esc(r.positionInClass??'—')}</td><td>${esc(r.grade||'—')}</td></tr>`).join('')}</tbody></table></div><div class="field"><label>Promoted to/Repeated in</label><select id="rep-promoted-to"><option value="">Select</option>${next?`<option value="${esc(next)}" ${rep.promotedTo===next?'selected':''}>${esc(next)}</option>`:''}<option value="No promotion" ${rep.promotedTo==='No promotion'?'selected':''}>No promotion</option><option value="Graduated" ${rep.promotedTo==='Graduated'?'selected':''}>Graduated</option></select></div><div class="field"><label>Next term re-opens</label><input type="text" id="rep-next-term" value="${esc(rep.nextTermReopens||"")}" placeholder="Optional"></div><div class="field"><label>Conduct</label><input type="text" id="rep-conduct" value="${esc(rep.conduct||"")}"></div><div class="field"><label>Interest</label><input type="text" id="rep-interest" value="${esc(rep.interest||"")}"></div><div class="field"><label>Class teacher's Remarks</label><textarea id="rep-teacher-remark" rows="2">${esc(rep.teacherRemark||"")}</textarea></div><div class="field"><label>Head teacher's remarks</label><textarea id="rep-head-remark" rows="2">${esc(rep.headRemark||"")}</textarea></div><div class="row" style="justify-content:flex-end"><button class="btn btn-outline" id="cancel-report-btn">Close</button><button class="btn btn-primary" id="save-report-btn">Save remarks</button></div></div></div>`;
+  };
+
+  // Extend the existing modal save handler for auto-generated reports without touching marks/results.
+  const _arModalAttach=attachModalHandlers;
+  attachModalHandlers=function(){
+    _arModalAttach();
+    const save=document.getElementById("save-report-btn");
+    const bg=document.getElementById("report-modal-bg");
+    if(!save||!uiState.editingReport)return;
+    const [sid,term]=uiState.editingReport.split("|"),rep=(DB.reports[sid]||{})[term];
+    if(!rep?.generatedFromAssessments)return;
+    save.onclick=async()=>{
+      rep.promotedTo=document.getElementById("rep-promoted-to")?.value||rep.promotedTo||"";
+      rep.nextTermReopens=document.getElementById("rep-next-term")?.value.trim()||"";
+      rep.conduct=document.getElementById("rep-conduct")?.value.trim()||"";
+      rep.interest=document.getElementById("rep-interest")?.value.trim()||"";
+      rep.teacherRemark=document.getElementById("rep-teacher-remark")?.value.trim()||"";
+      rep.headRemark=document.getElementById("rep-head-remark")?.value.trim()||"";
+      rep.approved=false;
+      await saveKey("reports",DB.reports);uiState.editingReport=null;uiState.reportDraft=null;showToast("TERMLY REPORT remarks saved. It remains hidden until Admin approval.");render();
+    };
+    const cancel=document.getElementById("cancel-report-btn");if(cancel)cancel.onclick=()=>{uiState.editingReport=null;uiState.reportDraft=null;render();};
+  };
+
+  // Admin review screen: generated reports appear as awaiting approval, with review/download controls.
+  const _arAdminReports=adminReports;
+  adminReports=function(){
+    const cls=uiState.adminReportClass||CLASSES[0],term=uiState.adminReportTerm||TERMS[0],list=studentsInClass(cls);
+    const generated=list.filter(s=>(DB.reports[s.id]||{})[term]?.generatedFromAssessments).length;
+    const ready=list.filter(s=>(DB.reports[s.id]||{})[term]?.generatedFromAssessments && (DB.reports[s.id]||{})[term]?.approved).length;
+    const base=_arAdminReports();
+    const panel=`<div class="card" style="border-top:4px solid var(--gold);"><div class="row" style="justify-content:space-between;align-items:center"><div><h3>TERMLY REPORT APPROVAL</h3><p class="card-sub">Auto-generated reports from Basic 7–9 assessment records. Reports remain hidden from teachers/students until Admin approval.</p></div><span class="badge ${generated&&ready===generated?'badge-approved':'badge-partial'}">${ready}/${generated} APPROVED</span></div></div>`;
+    return panel+base;
+  };
+
+  // The existing admin report list already has approve/unapprove handlers; add direct download for approved generated reports.
+  const _arAttachFinal=attachHandlers;
+  attachHandlers=function(){
+    _arAttachFinal();
+    document.querySelectorAll("[data-edit-report]").forEach(el=>{
+      el.onclick=()=>{const [sid,term]=el.dataset.editReport.split("|");uiState.editingReport=sid+"|"+term;uiState.reportDraft=null;renderModals();};
+    });
+  };
+
+  // Make the student/teacher report PDF button use the new exact-style report renderer.
+  const _arStudentDownload=downloadReportPdf;
+  downloadReportPdf=function(){
+    const s=session?.student;if(!s)return;const term=uiState.studentReportTerm||TERMS.find(t=>(DB.reports[s.id]||{})[t]?.approved);drawTermlyReportPdf(s.id,term);
+  };
+  window.DLBSAssessmentSystem={assessmentStore,assessmentTotals,gradeDetails,allSubjectsSubmitted,generateTermlyReports,drawTermlyReportPdf};
+  setTimeout(()=>{if(typeof render==="function")render();},120);
 })();
 
 </script>
