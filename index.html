@@ -1544,32 +1544,133 @@ function reportEditorModal(){
 }
 
 /* ============================= STUDENT/PARENT: REGISTER ============================= */
+function collectStudentAttendanceRecords(student){
+  const out = new Map();
+  const wantedId = String(student?.id || "");
+  const wantedClass = String(student?.class || "");
+
+  const add = (date, status) => {
+    if(!date || !["present","absent"].includes(String(status).toLowerCase())) return;
+    const d = String(date).slice(0,10);
+    out.set(d, {date:d, status:String(status).toLowerCase()});
+  };
+
+  const attendance = DB.attendance || {};
+
+  // Primary school format: class -> date -> studentId -> status.
+  const classBook = attendance[wantedClass] || {};
+  if(classBook && typeof classBook === "object"){
+    Object.entries(classBook).forEach(([date, rec]) => {
+      if(rec && typeof rec === "object"){
+        const direct = rec[wantedId];
+        if(typeof direct === "string") add(date, direct);
+
+        // Also tolerate records saved with a student object/name field.
+        Object.entries(rec).forEach(([key, value]) => {
+          if(key === wantedId) return;
+          if(value && typeof value === "object" && String(value.studentId || value.id || "") === wantedId){
+            add(date, value.status);
+          }
+        });
+      }
+    });
+  }
+
+  // Compatibility formats: studentId -> date -> status, or a flat array.
+  const studentBook = attendance[wantedId];
+  if(studentBook && typeof studentBook === "object" && !Array.isArray(studentBook)){
+    Object.entries(studentBook).forEach(([date, value]) => {
+      add(date, typeof value === "string" ? value : value?.status);
+    });
+  }
+
+  const scan = (node, depth=0, inheritedDate="") => {
+    if(depth > 5 || node == null) return;
+    if(Array.isArray(node)){
+      node.forEach(item => scan(item, depth+1, inheritedDate));
+      return;
+    }
+    if(typeof node !== "object") return;
+
+    const sid = String(node.studentId ?? node.student_id ?? node.student ?? node.id ?? "");
+    const cls = String(node.class ?? node.className ?? node.class_name ?? "");
+    const date = node.date ?? node.attendanceDate ?? node.attendance_date ?? node.day ?? inheritedDate;
+    const status = node.status ?? node.attendance ?? node.value;
+    if((!sid || sid === wantedId) && (!cls || cls === wantedClass) && date && status){
+      add(date, status);
+    }
+
+    Object.entries(node).forEach(([key, value]) => {
+      const looksLikeDate = /^\d{4}-\d{2}-\d{2}/.test(key);
+      scan(value, depth+1, looksLikeDate ? key : inheritedDate);
+    });
+  };
+
+  // Scan only when the primary lookup did not already find everything; this
+  // makes the student screen tolerant of older attendance storage formats.
+  scan(attendance);
+
+  return [...out.values()].sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+}
+
 function studentRegister(){
   const s = session.student;
-  const cls = s.class;
-  const records = [];
-  Object.entries((DB.attendance[cls]||{})).forEach(([date, rec])=>{
-    if(rec[s.id]) records.push({date, status: rec[s.id]});
-  });
-  records.sort((a,b)=> new Date(b.date)-new Date(a.date));
+  const records = collectStudentAttendanceRecords(s);
   const present = records.filter(r=>r.status==="present").length;
   const absent = records.filter(r=>r.status==="absent").length;
+  const total = records.length;
+  const percentage = total ? Math.round((present / total) * 100) : 0;
+
   return `
   <div class="grid-3" style="margin-bottom:20px;">
     <div class="stat"><div class="n">${present}</div><div class="l">Days present</div></div>
     <div class="stat"><div class="n">${absent}</div><div class="l">Days absent</div></div>
-    <div class="stat"><div class="n">${records.length}</div><div class="l">Total days recorded</div></div>
+    <div class="stat"><div class="n">${percentage}%</div><div class="l">Attendance rate</div></div>
   </div>
+
   <div class="card">
-    <div class="row" style="justify-content:space-between;">
-      <h3 style="margin:0;">Attendance register</h3>
-      <button class="btn btn-gold btn-sm" id="download-register-btn">Download as PDF</button>
+    <div class="row" style="justify-content:space-between;align-items:center;gap:10px;">
+      <div>
+        <h3 style="margin:0;">My Attendance Register</h3>
+        <p class="card-sub" style="margin-bottom:0;">
+          ${esc(s.name)} — ${esc(s.class)}
+        </p>
+      </div>
+      <div class="row" style="gap:8px;">
+        <button class="btn btn-outline btn-sm" id="student-refresh-register-btn" type="button">Refresh</button>
+        <button class="btn btn-gold btn-sm" id="download-register-btn" type="button">Download as PDF</button>
+      </div>
     </div>
-    <p class="card-sub">This register is maintained by your class teacher and cannot be edited here.</p>
-    ${records.length===0 ? `<div class="empty"><b>No attendance recorded yet</b></div>` :
-    `<div class="ledger"><table><thead><tr><th>Date</th><th>Status</th></tr></thead><tbody>
-      ${records.map(r=>`<tr><td>${fmtDate(r.date)}</td><td><span class="badge ${r.status==='present'?'badge-present':'badge-absent'}">${r.status==='present'?'Present':'Absent'}</span></td></tr>`).join("")}
-    </tbody></table></div>`}
+
+    <div style="margin-top:14px;padding:11px 13px;background:var(--paper);border:1px solid var(--line);border-radius:6px;font-size:12.5px;color:var(--text-soft);">
+      <b style="color:var(--ink);">Read-only register.</b>
+      Your class teacher or school administrator records attendance. You can view your
+      Present and Absent history here, but you cannot change it.
+    </div>
+
+    ${records.length===0
+      ? `<div class="empty" style="margin-top:16px;">
+          <b>No attendance records are showing yet</b>
+          <div>When your teacher records your attendance, it will appear here as Present or Absent.</div>
+        </div>`
+      : `<div class="ledger" style="margin-top:16px;">
+          <table>
+            <thead><tr><th>#</th><th>Date</th><th>Status</th></tr></thead>
+            <tbody>
+              ${records.map((r,i)=>`
+                <tr>
+                  <td>${i+1}</td>
+                  <td>${fmtDate(r.date)}</td>
+                  <td>
+                    <span class="badge ${r.status==="present"?"badge-present":"badge-absent"}">
+                      ${r.status==="present"?"Present":"Absent"}
+                    </span>
+                  </td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`
+    }
   </div>`;
 }
 
@@ -2120,6 +2221,22 @@ function attachHandlers(){
   /* ---- STUDENT: register download ---- */
   const dlReg = document.getElementById("download-register-btn");
   if(dlReg) dlReg.onclick = downloadRegisterPdf;
+
+  const studentRegisterRefresh = document.getElementById("student-refresh-register-btn");
+  if(studentRegisterRefresh) studentRegisterRefresh.onclick = async ()=>{
+    try{
+      studentRegisterRefresh.disabled = true;
+      studentRegisterRefresh.textContent = "Refreshing...";
+      await loadAll();
+      render();
+      showToast("Attendance register refreshed.");
+    }catch(err){
+      console.error("Student attendance refresh failed", err);
+      showToast(err?.message || "Could not refresh the attendance register.");
+      studentRegisterRefresh.disabled = false;
+      studentRegisterRefresh.textContent = "Refresh";
+    }
+  };
   const stTerm = document.getElementById("student-report-term");
   if(stTerm) stTerm.onchange = ()=>{ uiState.studentReportTerm = stTerm.value; render(); };
   const dlRep = document.getElementById("download-report-btn");
@@ -2405,11 +2522,9 @@ function downloadRegisterPdf(){
   doc.setFontSize(10);
   doc.text("Date", 14, y); doc.text("Status", 90, y); y+=6;
   doc.line(14,y-4,190,y-4);
-  const records = [];
-  Object.entries((DB.attendance[s.class]||{})).forEach(([date, rec])=>{
-    if(rec[s.id]) records.push({date, status: rec[s.id]});
-  });
-  records.sort((a,b)=> new Date(a.date)-new Date(b.date));
+  const records = collectStudentAttendanceRecords(s)
+    .slice()
+    .sort((a,b)=> new Date(a.date)-new Date(b.date));
   records.forEach(r=>{
     if(y>280){ doc.addPage(); y=20; }
     doc.text(fmtDate(r.date), 14, y);
