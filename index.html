@@ -910,6 +910,11 @@ function esc(s){ return (s||"").toString().replace(/[&<>"']/g, c=>({"&":"&amp;",
 
 /* ============================= RENDER ROOT ============================= */
 function render(){
+  // Do not replace the Settings DOM while an administrator is typing credentials.
+  // Realtime updates elsewhere in the portal can call render(); replacing the form
+  // on every refresh makes characters appear and then disappear.
+  const focused = document.activeElement;
+  if(focused && focused.closest && focused.closest("#admin-credentials-form")) return;
   const app = document.getElementById("app");
   if(view==="landing") app.innerHTML = renderLanding();
   else if(view==="login-admin") app.innerHTML = renderAdminLogin();
@@ -4491,6 +4496,30 @@ function resizeImageToBlob(file,maxSize=900,quality=0.82){
         ${settings.paymentsOpen?`<button class="btn btn-danger" type="button" id="toggle-fee-payments">LOCK FEE PAYMENTS</button>`:`<button class="btn btn-gold" type="button" id="toggle-fee-payments">OPEN FEE PAYMENTS</button>`}
       </div>
       <p class="help-note">Locking payments only blocks new online Paystack checkout. Existing confirmed and pending records remain untouched.</p>
+    </div>
+    <div class="card">
+      <h3>Administrator Login Credentials</h3>
+      <p class="card-sub">Update the email and password for the currently signed-in administrator account. This does not create or delete an account.</p>
+      <form id="admin-credentials-form">
+        <div class="field">
+          <label for="admin-credentials-email">New administrator email</label>
+          <input id="admin-credentials-email" type="email" autocomplete="email" required
+            value="${esc(session?.email||authSession?.user?.email||"")}"
+            placeholder="deeperlifebasicschoolbole@gmail.com">
+        </div>
+        <div class="field">
+          <label for="admin-credentials-password">New password (at least 8 characters)</label>
+          <input id="admin-credentials-password" type="password" autocomplete="new-password"
+            minlength="8" required placeholder="Enter a new password">
+        </div>
+        <div class="field">
+          <label for="admin-credentials-confirm">Confirm new password</label>
+          <input id="admin-credentials-confirm" type="password" autocomplete="new-password"
+            minlength="8" required placeholder="Re-enter the new password">
+        </div>
+        <button class="btn btn-primary" type="submit" id="save-admin-credentials">Update administrator credentials</button>
+        <p class="help-note">Keep this portal open until the update finishes. Supabase may require you to confirm the new email through an email message before it becomes the login email. Do not sign out until the email change is confirmed and you have tested the new login.</p>
+      </form>
     </div>`;
   }
 
@@ -4593,6 +4622,61 @@ function resizeImageToBlob(file,maxSize=900,quality=0.82){
         render();
       }catch(err){console.error(err);showToast("The profile picture could not be saved.");}
       finally{selfProfileInput.disabled=false;}
+    };
+
+    const credentialsForm=document.getElementById("admin-credentials-form");
+    if(credentialsForm) credentialsForm.onsubmit=async e=>{
+      e.preventDefault();
+      if(session?.role!=="admin" || !authSession?.user || !supabaseClient){
+        showToast("Please sign in again as the administrator before changing credentials.");
+        return;
+      }
+      const email=document.getElementById("admin-credentials-email")?.value.trim()||"";
+      const password=document.getElementById("admin-credentials-password")?.value||"";
+      const confirmPassword=document.getElementById("admin-credentials-confirm")?.value||"";
+      if(!email){showToast("Enter the new administrator email.");return;}
+      if(password.length<8){showToast("Use a password with at least 8 characters.");return;}
+      if(password!==confirmPassword){showToast("The new passwords do not match.");return;}
+      const submit=document.getElementById("save-admin-credentials");
+      try{
+        if(submit){submit.disabled=true;submit.textContent="Updating credentials...";}
+        const {data,error}=await supabaseClient.functions.invoke("update-admin-credentials",{
+          body:{email,password}
+        });
+        if(error){
+          let detail="";
+          let status="";
+          try{
+            const response=error?.context;
+            if(response){
+              if(response.status) status=" (HTTP "+response.status+")";
+              if(typeof response.clone==="function"){
+                const raw=await response.clone().text();
+                if(raw){
+                  try{
+                    const parsed=JSON.parse(raw);
+                    detail=parsed?.error||parsed?.message||parsed?.details||raw;
+                  }catch(_){detail=raw;}
+                }
+              } else if(typeof response==="string") detail=response;
+            }
+          }catch(_){}
+          const msg=(detail||error.message||"The credential update request failed.")+status;
+          throw new Error(msg);
+        }
+        if(!data?.success) throw new Error(data?.error||"Supabase did not confirm the credential update.");
+        const emailChanged=email.toLowerCase()!==(authSession.user.email||"").toLowerCase();
+        document.getElementById("admin-credentials-password").value="";
+        document.getElementById("admin-credentials-confirm").value="";
+        showToast(emailChanged
+          ?"Credential request succeeded. Check the email inboxes for Supabase confirmation instructions; keep this session open."
+          :"Password updated successfully. Keep this session open and test the new password before signing out.");
+        if(submit){submit.disabled=false;submit.textContent="Update administrator credentials";}
+      }catch(err){
+        console.error("Admin credential update failed",err);
+        showToast(err?.message||"Could not update administrator credentials.");
+        if(submit){submit.disabled=false;submit.textContent="Update administrator credentials";}
+      }
     };
 
     const bgInput=document.getElementById("portal-bg-file");
